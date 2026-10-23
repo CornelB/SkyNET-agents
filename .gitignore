@@ -1,0 +1,14 @@
+### Editor and OS garbage
+.idea
+.delta
+.zed
+.DS_Store
+Thumbs.db
+
+### AI
+.claude -> .agents symlink
+.agents/worktrees/*
+
+### Graphify
+graphify-out/*
+# .graphifyignore

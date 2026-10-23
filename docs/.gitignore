@@ -1,0 +1,9 @@
+# Local-only overrides (configuration.local.md, notes.local, settings.local.json, ...)
+# Two patterns instead of `*.local*`, which would also catch e.g. `strings.localization.md`
+# Note: `local` is a reserved project name — `*.<project-name>.md` overlays are tracked,
+# but `*.local.*` never is.
+*.local
+*.local.*
+
+# Local-only directories: anything inside a local/ dir, at any depth
+local/
