@@ -1,0 +1,11 @@
+{
+  "name": "skynet",
+  "version": "0.1.0",
+  "description": "Delegate work from Claude Code to Codex, Antigravity or local Ollama, routed by live usage, as tracked background jobs.",
+  "author": {
+    "name": "CornelB",
+    "url": "https://github.com/CornelB"
+  },
+  "license": "MIT",
+  "keywords": ["delegation", "subagent", "usage", "codex", "antigravity", "ollama"]
+}

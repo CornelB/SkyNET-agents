@@ -1,0 +1,6 @@
+skynet
+Copyright (c) 2026 Cornel Bularca
+
+Files marked "Derived from openai/codex-plugin-cc" under scripts/lib/ are
+adapted from https://github.com/openai/codex-plugin-cc, licensed under the
+Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0

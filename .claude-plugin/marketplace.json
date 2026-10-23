@@ -1,0 +1,16 @@
+{
+  "name": "skynet-local",
+  "description": "Local marketplace for the skynet plugin.",
+  "owner": {
+    "name": "CornelB",
+    "url": "https://github.com/CornelB"
+  },
+  "plugins": [
+    {
+      "name": "skynet",
+      "source": "./",
+      "description": "Usage-aware delegation to Codex, Antigravity and Ollama.",
+      "version": "0.1.0"
+    }
+  ]
+}
