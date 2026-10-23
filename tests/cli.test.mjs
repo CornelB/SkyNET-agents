@@ -56,6 +56,20 @@ test("delegate runs a job to completion", async () => {
   assert.match(run("result", id).out, /fake codex: hi there/);
 });
 
+test("result keeps output and status on separate lines", async () => {
+  const { run } = setup({ FAKE_NO_NEWLINE: "1" });
+  const r = run("delegate", "--backend", "codex", "--mode", "read", "--wait", "--", "nl");
+  assert.match(r.out, /fake codex: nl\ndlg-\S+ codex completed/);
+});
+
+test("write briefs tell the worker not to commit", () => {
+  const { run } = setup();
+  const r = run("delegate", "--backend", "codex", "--mode", "write", "--wait", "--", "edit");
+  assert.equal(r.code, 0, r.err);
+  const job = JSON.parse(run("status", r.out.split(" ")[0], "--json").out);
+  assert.match(fs.readFileSync(job.promptFile, "utf8"), /Do not commit/);
+});
+
 test("agy output is captured from stdout", async () => {
   const { run } = setup();
   const id = run("delegate", "--backend", "agy", "--mode", "read", "--", "yo").out.split(" ")[0];
@@ -121,4 +135,21 @@ test("setup saves the config from flags", () => {
   assert.deepEqual(saved.backends.agy, { enabled: false, billing: "subscription" });
   assert.deepEqual(saved.backends.ollama, { enabled: true, billing: "local", model: "m1" });
   assert.equal(run("setup", "--enable", "grok").code, 2);
+});
+
+test("delegate --wait runs in the foreground and prints the result", () => {
+  const { run } = setup();
+  const r = run("delegate", "--backend", "codex", "--mode", "read", "--wait", "--", "now");
+  assert.equal(r.code, 0, r.err);
+  const lines = r.out.split("\n");
+  assert.match(lines[0], /^dlg-\S+ → codex/);
+  assert.match(r.out, /fake codex: now/);
+  assert.match(lines.at(-1), / completed/);
+});
+
+test("delegate --wait exits 1 when the backend fails", () => {
+  const { run } = setup({ FAKE_MODE: "fail" });
+  const r = run("delegate", "--backend", "codex", "--mode", "read", "--wait", "--", "x");
+  assert.equal(r.code, 1);
+  assert.match(r.out, / failed .*boom/);
 });

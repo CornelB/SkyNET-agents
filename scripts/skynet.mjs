@@ -13,7 +13,7 @@ import { readStdinIfPiped } from "./lib/fs.mjs";
 import { buildStatusSnapshot, formatElapsedDuration, readStoredJob, resolveCancelableJob, resolveResultJob } from "./lib/job-control.mjs";
 import { terminateProcessTree } from "./lib/process.mjs";
 import { handoffLevel, route } from "./lib/router.mjs";
-import { ensureStateDir, generateJobId, resolveJobLogFile, resolveJobsDir, upsertJob, writeJobFile } from "./lib/state.mjs";
+import { ensureStateDir, generateJobId, resolveJobLogFile, resolveJobsDir, resolveStateDir, upsertJob, writeJobFile } from "./lib/state.mjs";
 import { appendLogLine, createJobRecord, nowIso, runTrackedJob } from "./lib/tracked-jobs.mjs";
 import { readUsage } from "./lib/usage.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
@@ -25,6 +25,12 @@ const BACKENDS = ["codex", "agy", "ollama"];
 class UsageError extends Error {}
 
 const print = (line) => process.stdout.write(`${line}\n`);
+// Empty codex home for ollama jobs, shared by all workspaces; codex fills it on first run.
+const ossHome = () => {
+  const dir = path.join(path.dirname(resolveStateDir(process.cwd())), "codex-oss-home");
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+};
 const list = (value) => (value ? String(value).split(",").map((s) => s.trim()).filter(Boolean) : []);
 
 function setup(options) {
@@ -65,7 +71,7 @@ async function routeCommand() {
 function composePrompt(brief, { mode, paths }) {
   const parts = [brief.trim()];
   if (paths.length) parts.push(`Scope: work only in ${paths.join(", ")}.`);
-  if (mode === "read") parts.push("Do not edit files.");
+  parts.push(mode === "read" ? "Do not edit files." : "Do not commit. Leave your changes uncommitted.");
   parts.push("End with a summary of at most 5 lines.");
   return parts.join("\n\n");
 }
@@ -105,7 +111,7 @@ async function delegate(options, positionals) {
     ? createWorkerTree({ repo: workspaceRoot, backend, scratchDir: process.env.CLAUDE_SCRATCHPAD || os.tmpdir(), jobId: id })
     : null;
   // Fail before spawning when the invocation cannot be built (e.g. no ollama model).
-  buildInvocation(backend, { mode: options.mode, cwd: tree?.path ?? workspaceRoot, promptFile, outFile, prompt, model: config.backends[backend]?.model });
+  buildInvocation(backend, { mode: options.mode, cwd: tree?.path ?? workspaceRoot, promptFile, outFile, prompt, model: config.backends[backend]?.model, ossHome: ossHome() });
   fs.writeFileSync(promptFile, prompt);
 
   const job = createJobRecord({
@@ -125,9 +131,14 @@ async function delegate(options, positionals) {
   writeJobFile(workspaceRoot, id, job);
   upsertJob(workspaceRoot, job);
 
+  print(`${id} ${reason}`);
+  if (options.wait) {
+    await worker(id, workspaceRoot);
+    result([id]);
+    return readStoredJob(workspaceRoot, id)?.status === "completed" ? 0 : 1;
+  }
   const child = spawn(process.execPath, [SELF, "worker", id], { cwd: workspaceRoot, detached: true, stdio: "ignore", env: process.env });
   child.unref();
-  print(`${id} ${reason}`);
   return 0;
 }
 
@@ -136,7 +147,7 @@ function runBackend(invocation, cwd, logFile) {
     const stdin = invocation.stdinFile ? fs.openSync(invocation.stdinFile, "r") : "ignore";
     const stdout = fs.openSync(invocation.stdoutFile ?? logFile, invocation.stdoutFile ? "w" : "a");
     let lastErr = "";
-    const child = spawn(invocation.cmd, invocation.args, { cwd, stdio: [stdin, stdout, "pipe"] });
+    const child = spawn(invocation.cmd, invocation.args, { cwd, stdio: [stdin, stdout, "pipe"], env: { ...process.env, ...invocation.env } });
     child.stderr.on("data", (chunk) => {
       fs.appendFileSync(logFile, chunk);
       const lines = String(chunk).split("\n").map((l) => l.trim()).filter(Boolean);
@@ -147,14 +158,13 @@ function runBackend(invocation, cwd, logFile) {
   });
 }
 
-async function worker(id) {
-  const workspaceRoot = process.cwd();
+async function worker(id, workspaceRoot = process.cwd()) {
   const job = readStoredJob(workspaceRoot, id);
   if (!job) {
     throw new UsageError(`no job ${id}`);
   }
   const prompt = fs.readFileSync(job.promptFile, "utf8");
-  const invocation = buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model: job.model });
+  const invocation = buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model: job.model, ossHome: ossHome() });
   appendLogLine(job.logFile, `starting ${job.backend}`);
   await runTrackedJob(job, async () => {
     const { code, lastErr } = await runBackend(invocation, job.cwd, job.logFile);
@@ -187,8 +197,9 @@ function status(options, positionals) {
 
 function result(positionals) {
   const { job } = resolveResultJob(process.cwd(), positionals[0]);
-  if (fs.existsSync(job.outFile ?? "")) {
-    process.stdout.write(fs.readFileSync(job.outFile, "utf8"));
+  const output = fs.existsSync(job.outFile ?? "") ? fs.readFileSync(job.outFile, "utf8") : "";
+  if (output) {
+    process.stdout.write(output.endsWith("\n") ? output : `${output}\n`);
   }
   print(statusLine(job));
   return 0;
@@ -208,7 +219,7 @@ async function main(argv) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArgs(rest, {
     valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "agy-window"],
-    booleanOptions: ["parallel", "json", "all"]
+    booleanOptions: ["parallel", "wait", "json", "all"]
   });
   switch (command) {
     case "setup": return setup(options);

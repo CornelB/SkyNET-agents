@@ -13,7 +13,7 @@ if (mode === "sleep") {
   setTimeout(() => {}, 60_000);
 } else {
   const prompt = fs.readFileSync(0, "utf8");
-  fs.writeFileSync(out, `fake codex: ${prompt.split("\n")[0]}\n`);
+  fs.writeFileSync(out, `fake codex: ${prompt.split("\n")[0]}${process.env.FAKE_NO_NEWLINE ? "" : "\n"}`);
   if (process.env.FAKE_EDIT) {
     fs.writeFileSync(`${args[args.indexOf("-C") + 1]}/edited.txt`, "worker\n");
   }

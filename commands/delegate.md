@@ -1,0 +1,19 @@
+---
+description: Delegate work to Codex, Antigravity or local Ollama, picked by live usage
+argument-hint: '[what to delegate]'
+allowed-tools: Bash(node:*), Bash(git:*)
+---
+
+Delegate this: $ARGUMENTS
+
+The CLI is `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs"`.
+
+1. Run `<cli> route`. Line 1 is the backend pick, line 2 the hand-off level from Claude's own usage. If line 1 starts with `no backend:`, show it and stop.
+2. Decide what to hand off. The request above is the floor. The hand-off level says how much more of the current task to give away: `hand off what was named`, `hand off any part a worker can do alone`, or `hand off everything but orchestration and diff review`.
+3. For each piece, write a brief of at most 15 lines: goal, files or paths, constraints, done-when. The worker has none of this conversation.
+4. Pick the mode yourself: `write` to fix or implement, `read` to review, investigate or explain.
+5. Start each piece with the Bash tool, `run_in_background: true`:
+   `<cli> delegate --mode <write|read> [--paths a,b] [--parallel] --wait -- "<brief>"`
+   Add `--parallel` to every writer when more than one writer runs at the same time; each gets its own worktree and branch, merged back when it finishes.
+6. Show only the first line the command prints (`<job-id> → <backend> (...)`). Keep working; you are notified when the job ends.
+7. When a job ends, read its output. For a write job, read `git diff` (or the merge line), then keep or revert the changes. Report one line per job.
