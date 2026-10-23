@@ -1,0 +1,8 @@
+#!/usr/bin/env node
+// Fake codexbar: prints the JSON in $FAKE_CODEXBAR_JSON, or a three-provider default.
+const fallback = [
+  { provider: "codex", source: "oauth", usage: { primary: { usedPercent: 38, windowMinutes: 300, resetsAt: "2026-10-23T11:41:23Z" }, secondary: { usedPercent: 6, windowMinutes: 10080, resetsAt: "2026-10-30T06:41:23Z" } } },
+  { provider: "claude", source: "oauth", usage: { primary: { usedPercent: 0, windowMinutes: 300, resetsAt: "2026-10-23T15:59:59Z" }, secondary: { usedPercent: 84, windowMinutes: 10080, resetsAt: "2026-10-24T01:59:59Z" } } },
+  { provider: "antigravity", source: "cli", usage: { primary: { usedPercent: 1, resetsAt: "2026-10-30T08:34:37Z" } }, rateWindowLabels: { primary: "Gemini Models" } }
+];
+process.stdout.write(process.env.FAKE_CODEXBAR_JSON ?? JSON.stringify(fallback));
