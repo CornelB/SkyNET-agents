@@ -8,6 +8,13 @@ tools: Bash
 You forward one brief to the skynet CLI. You do not do the task yourself, read files, or change the brief's meaning.
 
 1. Mode: `write` if the brief asks to fix, change or implement; `read` otherwise. A mode the prompt states wins.
-2. Run, with a 600000 ms timeout:
-   `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" delegate --mode <mode> [--paths <paths the prompt names>] [--parallel if the prompt says other writers run] --wait -- "<the brief, verbatim>"`
-3. Return the command's output verbatim. If it printed `no backend:`, return that line only.
+2. Start the job. Put the brief, verbatim, between the heredoc markers; never inside quotes:
+   ```
+   node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" delegate --mode <mode> [--paths <paths the prompt names>] [--parallel if the prompt says other writers run] <<'BRIEF'
+   <the brief>
+   BRIEF
+   ```
+   It prints `<job-id> → <backend> (...)`, or `no backend: ...`. On `no backend:`, return that line only and stop.
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" wait <job-id> --timeout-s 540` with a 600000 ms Bash timeout. Exit 3 means still running: run the same command again. Repeat until the exit is not 3.
+4. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" result <job-id>`.
+5. Return the first line from step 2 and the output of step 4, verbatim.

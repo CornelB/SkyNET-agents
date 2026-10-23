@@ -35,12 +35,34 @@ export function createWorkerTree({ repo, backend, scratchDir, jobId }) {
   return { path: treePath, branch, base };
 }
 
+// Parallel workers can finish together; one merge at a time into the user's tree.
+function withMergeLock(repo, timeoutMs, fn) {
+  const lock = path.resolve(repo, gitChecked(repo, "rev-parse", "--git-common-dir"), "skynet-merge.lock");
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    try {
+      fs.mkdirSync(lock);
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST" || Date.now() >= deadline) {
+        return null;
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  }
+  try {
+    return fn();
+  } finally {
+    fs.rmdirSync(lock);
+  }
+}
+
 function cleanup(repo, treePath, branch) {
   gitChecked(repo, "worktree", "remove", "--force", treePath);
   gitChecked(repo, "branch", "-D", branch);
 }
 
-export function finishWorkerTree({ repo, path: treePath, branch, base, backend }) {
+export function finishWorkerTree({ repo, path: treePath, branch, base, backend, lockTimeoutMs = 120_000 }) {
   gitChecked(treePath, "add", "-A");
   const hasChanges = git(treePath, "diff", "--cached", "--quiet").status !== 0;
   if (hasChanges) {
@@ -50,14 +72,19 @@ export function finishWorkerTree({ repo, path: treePath, branch, base, backend }
     cleanup(repo, treePath, branch);
     return { merged: true, line: `${branch}: no changes` };
   }
-  if (git(repo, "symbolic-ref", "--quiet", "--short", "HEAD").stdout.trim() !== base) {
-    return { merged: false, line: `${branch}: kept, ${repo} is not on ${base}` };
-  }
-  const merge = git(repo, "merge", "--no-ff", "-q", "-m", `merge ${branch}`, branch);
-  if (merge.status !== 0) {
-    git(repo, "merge", "--abort");
-    return { merged: false, line: `${branch}: conflict with ${base}, kept at ${treePath}` };
-  }
-  cleanup(repo, treePath, branch);
-  return { merged: true, line: `${branch}: merged into ${base}` };
+  const outcome = withMergeLock(repo, lockTimeoutMs, () => {
+    if (git(repo, "symbolic-ref", "--quiet", "--short", "HEAD").stdout.trim() !== base) {
+      return { merged: false, line: `${branch}: kept, ${repo} is not on ${base}` };
+    }
+    const merge = git(repo, "merge", "--no-ff", "-q", "-m", `merge ${branch}`, branch);
+    if (merge.status !== 0) {
+      if (git(repo, "rev-parse", "-q", "--verify", "MERGE_HEAD").status === 0) {
+        git(repo, "merge", "--abort");
+      }
+      return { merged: false, line: `${branch}: conflict with ${base}, kept at ${treePath}` };
+    }
+    cleanup(repo, treePath, branch);
+    return { merged: true, line: `${branch}: merged into ${base}` };
+  });
+  return outcome ?? { merged: false, line: `${branch}: merge lock busy, kept at ${treePath}` };
 }

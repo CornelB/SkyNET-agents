@@ -7,9 +7,14 @@ const NEAR = 75;
 
 const CLOUD = { codex: "codex", agy: "antigravity" };
 
-function hhmm(iso) {
+function resetTime(iso) {
   const date = new Date(iso ?? "");
-  return Number.isNaN(date.getTime()) ? "?" : date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  if (Number.isNaN(date.getTime())) {
+    return "?";
+  }
+  const time = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+  const sameDay = date.toDateString() === new Date().toDateString();
+  return sameDay ? time : `${date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${time}`;
 }
 
 function relevantWindows(backend, entry, cfg) {
@@ -33,19 +38,19 @@ function assess(backend, usage, cfg) {
     return { backend, available: true, tier: 2, room: 0, status: "ollama local" };
   }
   const entry = usage.find((e) => e.provider === CLOUD[backend]);
-  if (!entry) {
-    return { backend, available: false, status: `${backend} no usage data` };
-  }
-  if (entry.error) {
+  if (entry?.error) {
     return { backend, available: false, status: `${backend} error` };
   }
-  const windows = relevantWindows(backend, entry, cfg);
+  const windows = entry ? relevantWindows(backend, entry, cfg) : [];
   if (!windows.length) {
-    return { backend, available: false, status: `${backend} no usage data` };
+    // An API-key backend has no plan windows to read; it stays the last resort.
+    return cfg.billing === "per-token"
+      ? { backend, available: true, tier: 4, room: 0, status: `${backend} per-token, no usage data` }
+      : { backend, available: false, status: `${backend} no usage data` };
   }
   const full = windows.find((w) => isFull(backend, w));
   if (full) {
-    return { backend, available: false, status: `${backend} ${full.name} ${Math.round(full.used_percent)}% full until ${hhmm(full.resets_at)}` };
+    return { backend, available: false, status: `${backend} ${full.name} ${Math.round(full.used_percent)}% full until ${resetTime(full.resets_at)}` };
   }
   const top = windows.reduce((a, b) => (b.used_percent > a.used_percent ? b : a));
   const near = windows.some((w) => w.used_percent >= NEAR);

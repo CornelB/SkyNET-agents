@@ -19,7 +19,11 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 | `backends.ollama.model` | an `ollama list` name | none, required for ollama | Model that `codex exec --oss --local-provider ollama` runs. |
 | `backends.agy.window` | a codexbar window name | none: the highest agy window | The Antigravity usage window that counts for routing. |
 
+| `timeoutMinutes` | minutes | `60` | A job still running after this is killed and recorded as failed (`timed out`). `delegate --timeout-s` overrides it per job. |
+
 Backend names: `codex`, `agy`, `ollama`.
+
+Ollama jobs run codex with its own empty `CODEX_HOME` (`<job state root>/codex-oss-home`), so the user's codex config, MCP servers, skills and `AGENTS.md` do not reach the local model.
 
 ## Environment
 

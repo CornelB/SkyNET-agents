@@ -81,3 +81,14 @@ test("handoff levels follow claude week", () => {
   assert.equal(handoffLevel([]).level, "named");
   assert.match(handoffLevel([claude(84)]).line, /^claude week 84% → /);
 });
+
+test("per-token backend without usage windows is still a last resort", () => {
+  const r = route([], cfg({ codex: { enabled: true, billing: "per-token" }, agy: off, ollama: off }));
+  assert.equal(r.backend, "codex");
+});
+
+test("a reset on another day carries its date", () => {
+  const later = new Date(Date.now() + 3 * 86400_000).toISOString();
+  const r = route([{ provider: "codex", windows: [{ name: "week", used_percent: 99, resets_at: later }] }], cfg({ agy: off, ollama: off }));
+  assert.match(r.line, /full until \d\d [A-Z][a-z]{2} \d\d:\d\d/);
+});

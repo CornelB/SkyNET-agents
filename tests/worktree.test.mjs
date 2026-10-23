@@ -74,3 +74,17 @@ test("detached HEAD throws", () => {
   assert.throws(() => createWorkerTree({ repo, backend: "codex", scratchDir: tmp("skynet-scratch-"), jobId: "j" }), /detached HEAD/);
   assert.deepEqual(branches(repo).filter((b) => b.includes("--")), []);
 });
+
+test("a held merge lock keeps the worker branch", () => {
+  const repo = repoOn("feat/x");
+  const tree = createWorkerTree({ repo, backend: "codex", scratchDir: tmp("skynet-scratch-"), jobId: "j" });
+  fs.writeFileSync(path.join(tree.path, "b.txt"), "two\n");
+  const lock = path.join(repo, ".git", "skynet-merge.lock");
+  fs.mkdirSync(lock);
+  const done = finishWorkerTree({ repo, backend: "codex", ...tree, lockTimeoutMs: 200 });
+  assert.equal(done.merged, false);
+  assert.match(done.line, /merge lock busy/);
+  assert.ok(branches(repo).includes("feat/x--codex"));
+  fs.rmdirSync(lock);
+  assert.equal(finishWorkerTree({ repo, backend: "codex", ...tree }).merged, true);
+});

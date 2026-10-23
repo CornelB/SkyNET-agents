@@ -11,7 +11,6 @@ import { buildInvocation } from "./lib/backends.mjs";
 import { configPath, detectBackends, loadConfig, saveConfig } from "./lib/config.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { buildStatusSnapshot, formatElapsedDuration, readStoredJob, resolveCancelableJob, resolveResultJob } from "./lib/job-control.mjs";
-import { terminateProcessTree } from "./lib/process.mjs";
 import { handoffLevel, route } from "./lib/router.mjs";
 import { ensureStateDir, generateJobId, resolveJobLogFile, resolveJobsDir, resolveStateDir, upsertJob, writeJobFile } from "./lib/state.mjs";
 import { appendLogLine, createJobRecord, nowIso, runTrackedJob } from "./lib/tracked-jobs.mjs";
@@ -22,6 +21,9 @@ import { createWorkerTree, finishWorkerTree } from "./lib/worktree.mjs";
 const SELF = fileURLToPath(import.meta.url);
 const BACKENDS = ["codex", "agy", "ollama"];
 
+const DEFAULT_TIMEOUT_S = 3600;
+const ACTIVE = new Set(["queued", "running"]);
+
 class UsageError extends Error {}
 
 const print = (line) => process.stdout.write(`${line}\n`);
@@ -31,6 +33,38 @@ const ossHome = () => {
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 };
+const isAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
+};
+const signalGroup = (pid, signal) => {
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    // already gone
+  }
+};
+
+function patchJob(workspaceRoot, id, patch) {
+  upsertJob(workspaceRoot, { id, ...patch });
+  writeJobFile(workspaceRoot, id, { ...(readStoredJob(workspaceRoot, id) ?? {}), id, ...patch });
+}
+
+// A running job whose worker process is gone is failed; record it so it stops showing as running.
+function settle(workspaceRoot, job) {
+  if (ACTIVE.has(job.status) && job.pid && !isAlive(Number(job.pid))) {
+    if (job.backendPid) signalGroup(Number(job.backendPid), "SIGKILL");
+    const patch = { status: "failed", summary: "worker gone", pid: null, completedAt: nowIso() };
+    patchJob(workspaceRoot, job.id, patch);
+    return { ...job, ...patch };
+  }
+  return job;
+}
+
 const list = (value) => (value ? String(value).split(",").map((s) => s.trim()).filter(Boolean) : []);
 
 function setup(options) {
@@ -107,11 +141,15 @@ async function delegate(options, positionals) {
   const promptFile = path.join(jobsDir, `${id}.prompt.md`);
   const outFile = path.join(jobsDir, `${id}.out.md`);
   const prompt = composePrompt(brief, { mode: options.mode, paths: list(options.paths) });
+  // Fail before creating anything when the invocation cannot be built (e.g. no ollama model).
+  buildInvocation(backend, { mode: options.mode, cwd: workspaceRoot, promptFile, outFile, prompt, model: config.backends[backend]?.model, ossHome: ossHome() });
+  const timeoutS = Number(options["timeout-s"] ?? (config.timeoutMinutes ? config.timeoutMinutes * 60 : DEFAULT_TIMEOUT_S));
+  if (!(timeoutS > 0)) {
+    throw new UsageError("--timeout-s must be a positive number");
+  }
   const tree = options.parallel
     ? createWorkerTree({ repo: workspaceRoot, backend, scratchDir: process.env.CLAUDE_SCRATCHPAD || os.tmpdir(), jobId: id })
     : null;
-  // Fail before spawning when the invocation cannot be built (e.g. no ollama model).
-  buildInvocation(backend, { mode: options.mode, cwd: tree?.path ?? workspaceRoot, promptFile, outFile, prompt, model: config.backends[backend]?.model, ossHome: ossHome() });
   fs.writeFileSync(promptFile, prompt);
 
   const job = createJobRecord({
@@ -125,6 +163,7 @@ async function delegate(options, positionals) {
     promptFile,
     outFile,
     model: config.backends[backend]?.model ?? null,
+    timeoutS,
     tree,
     logFile: resolveJobLogFile(workspaceRoot, id)
   });
@@ -142,19 +181,34 @@ async function delegate(options, positionals) {
   return 0;
 }
 
-function runBackend(invocation, cwd, logFile) {
+// The backend gets its own process group so cancel and timeout can kill it and its children.
+function runBackend(invocation, { cwd, logFile, timeoutS, onSpawn }) {
   return new Promise((resolve) => {
     const stdin = invocation.stdinFile ? fs.openSync(invocation.stdinFile, "r") : "ignore";
     const stdout = fs.openSync(invocation.stdoutFile ?? logFile, invocation.stdoutFile ? "w" : "a");
     let lastErr = "";
-    const child = spawn(invocation.cmd, invocation.args, { cwd, stdio: [stdin, stdout, "pipe"], env: { ...process.env, ...invocation.env } });
+    let timedOut = false;
+    const child = spawn(invocation.cmd, invocation.args, { cwd, stdio: [stdin, stdout, "pipe"], detached: true, env: { ...process.env, ...invocation.env } });
+    if (child.pid) onSpawn(child.pid);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      signalGroup(child.pid, "SIGTERM");
+      setTimeout(() => signalGroup(child.pid, "SIGKILL"), 5000).unref();
+    }, timeoutS * 1000);
     child.stderr.on("data", (chunk) => {
       fs.appendFileSync(logFile, chunk);
       const lines = String(chunk).split("\n").map((l) => l.trim()).filter(Boolean);
       if (lines.length) lastErr = lines.at(-1);
     });
-    child.on("error", (error) => resolve({ code: 127, lastErr: error.message }));
-    child.on("close", (code) => resolve({ code: code ?? 1, lastErr }));
+    child.on("error", (error) => {
+      clearTimeout(timer);
+      resolve({ code: 127, lastErr: error.message });
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      if (timedOut) resolve({ code: 124, lastErr: `timed out after ${timeoutS}s` });
+      else resolve({ code: code ?? 1, lastErr: lastErr || (signal ? `killed by ${signal}` : "") });
+    });
   });
 }
 
@@ -167,9 +221,18 @@ async function worker(id, workspaceRoot = process.cwd()) {
   const invocation = buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model: job.model, ossHome: ossHome() });
   appendLogLine(job.logFile, `starting ${job.backend}`);
   await runTrackedJob(job, async () => {
-    const { code, lastErr } = await runBackend(invocation, job.cwd, job.logFile);
+    const { code, lastErr } = await runBackend(invocation, {
+      cwd: job.cwd,
+      logFile: job.logFile,
+      timeoutS: job.timeoutS ?? DEFAULT_TIMEOUT_S,
+      onSpawn: (backendPid) => patchJob(workspaceRoot, id, { backendPid })
+    });
     let summary = code === 0 ? null : lastErr || `exit ${code}`;
-    if (code === 0 && job.tree) {
+    const cancelled = readStoredJob(workspaceRoot, id)?.status === "cancelled";
+    if (!cancelled && code !== 0 && job.tree) {
+      summary = `${summary}, worktree kept at ${job.tree.path}`;
+    }
+    if (!cancelled && code === 0 && job.tree) {
       summary = finishWorkerTree({ repo: workspaceRoot, backend: job.backend, ...job.tree }).line;
     }
     return { exitStatus: code, summary, rendered: null, payload: null };
@@ -183,7 +246,8 @@ function statusLine(job) {
 }
 
 function status(options, positionals) {
-  const { jobs } = buildStatusSnapshot(process.cwd(), { reference: positionals[0], all: options.all });
+  const snapshot = buildStatusSnapshot(process.cwd(), { reference: positionals[0], all: options.all });
+  const jobs = snapshot.jobs.map((job) => settle(snapshot.workspaceRoot, job));
   if (options.json) {
     print(JSON.stringify(jobs.length === 1 ? readStoredJob(resolveWorkspaceRoot(process.cwd()), jobs[0].id) ?? jobs[0] : jobs));
     return 0;
@@ -207,18 +271,45 @@ function result(positionals) {
 
 function cancel(positionals) {
   const { workspaceRoot, job } = resolveCancelableJob(process.cwd(), positionals[0]);
-  terminateProcessTree(Number(job.pid));
-  const patch = { id: job.id, status: "cancelled", pid: null, completedAt: nowIso() };
-  upsertJob(workspaceRoot, patch);
-  writeJobFile(workspaceRoot, job.id, { ...(readStoredJob(workspaceRoot, job.id) ?? job), ...patch });
-  print(`${job.id} cancelled`);
+  const stored = readStoredJob(workspaceRoot, job.id) ?? job;
+  patchJob(workspaceRoot, job.id, { status: "cancelled", pid: null, completedAt: nowIso() });
+  if (stored.backendPid) signalGroup(Number(stored.backendPid), "SIGTERM");
+  if (stored.pid && Number(stored.pid) !== process.pid) {
+    try {
+      process.kill(Number(stored.pid), "SIGTERM");
+    } catch {
+      // already gone
+    }
+  }
+  print(`${job.id} cancelled${stored.tree ? `, worktree kept at ${stored.tree.path}` : ""}`);
   return 0;
+}
+
+async function waitFor(options, positionals) {
+  const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+  const { job: found } = buildSingle(workspaceRoot, positionals[0]);
+  const deadline = Date.now() + Number(options["timeout-s"] ?? 540) * 1000;
+  let job = settle(workspaceRoot, readStoredJob(workspaceRoot, found.id) ?? found);
+  while (ACTIVE.has(job.status) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 200));
+    job = settle(workspaceRoot, readStoredJob(workspaceRoot, found.id) ?? job);
+  }
+  print(statusLine(job));
+  return ACTIVE.has(job.status) ? 3 : job.status === "completed" ? 0 : 1;
+}
+
+function buildSingle(workspaceRoot, reference) {
+  if (!reference) {
+    throw new UsageError("wait needs a job id");
+  }
+  const { jobs } = buildStatusSnapshot(workspaceRoot, { reference });
+  return { job: jobs[0] };
 }
 
 async function main(argv) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArgs(rest, {
-    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "agy-window"],
+    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "agy-window", "timeout-s"],
     booleanOptions: ["parallel", "wait", "json", "all"]
   });
   switch (command) {
@@ -229,7 +320,8 @@ async function main(argv) {
     case "status": return status(options, positionals);
     case "result": return result(positionals);
     case "cancel": return cancel(positionals);
-    default: throw new UsageError("usage: skynet setup|route|delegate|status|result|cancel");
+    case "wait": return waitFor(options, positionals);
+    default: throw new UsageError("usage: skynet setup|route|delegate|status|wait|result|cancel");
   }
 }
 

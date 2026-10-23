@@ -34,15 +34,19 @@ test("ollama without a model throws", () => {
 test("agy write", () => {
   assert.deepEqual(buildInvocation("agy", { ...io, mode: "write" }), {
     cmd: "agy",
-    args: ["--output-format", "text", "--mode", "accept-edits", "--print-timeout", "0s", "--sandbox", "-p", "do it"],
+    args: ["--output-format", "text", "--mode", "accept-edits", "--print-timeout", "0s", "--sandbox", "-p=do it"],
     stdoutFile: "/jobs/out.md"
   });
 });
 
 test("agy read", () => {
-  assert.deepEqual(buildInvocation("agy", { ...io, mode: "read" }).args, ["--output-format", "text", "--mode", "plan", "--print-timeout", "0s", "-p", "do it"]);
+  assert.deepEqual(buildInvocation("agy", { ...io, mode: "read" }).args, ["--output-format", "text", "--mode", "plan", "--print-timeout", "0s", "-p=do it"]);
 });
 
 test("unknown backend throws", () => {
   assert.throws(() => buildInvocation("grok", { ...io, mode: "read" }), /unknown backend grok/);
+});
+
+test("agy prompt that starts with a dash stays one value", () => {
+  assert.equal(buildInvocation("agy", { ...io, prompt: "- fix a", mode: "read" }).args.at(-1), "-p=- fix a");
 });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,7 +32,8 @@ function setup(extraEnv = {}) {
     const r = spawnSync(process.execPath, [cli, ...args], { cwd: repo, env, encoding: "utf8" });
     return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
   };
-  return { repo, env, run };
+  const start = (...args) => spawn(process.execPath, [cli, ...args], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
+  return { repo, env, run, start };
 }
 
 async function waitFor(run, id, statuses) {
@@ -152,4 +153,81 @@ test("delegate --wait exits 1 when the backend fails", () => {
   const r = run("delegate", "--backend", "codex", "--mode", "read", "--wait", "--", "x");
   assert.equal(r.code, 1);
   assert.match(r.out, / failed .*boom/);
+});
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const job = (run, id) => JSON.parse(run("status", id, "--json").out);
+
+test("cancel stops a --wait job and its backend", async () => {
+  const { run, start } = setup({ FAKE_MODE: "sleep" });
+  const child = start("delegate", "--backend", "codex", "--mode", "read", "--wait", "--", "x");
+  let id = "";
+  child.stdout.on("data", (d) => { id ||= String(d).split(" ")[0]; });
+  const exited = new Promise((r) => child.on("exit", r));
+  for (let i = 0; i < 50 && !(id && job(run, id).backendPid); i += 1) await sleep(100);
+  const backendPid = job(run, id).backendPid;
+  assert.ok(alive(backendPid));
+  assert.match(run("cancel", id).out, /cancelled/);
+  await exited;
+  await sleep(200);
+  assert.equal(alive(backendPid), false);
+  assert.match(run("status", id).out, / cancelled/);
+});
+
+test("a hung backend times out as failed", () => {
+  const { run } = setup({ FAKE_MODE: "sleep" });
+  const r = run("delegate", "--backend", "codex", "--mode", "read", "--wait", "--timeout-s", "1", "--", "x");
+  assert.equal(r.code, 1);
+  assert.match(r.out, / failed .*timed out after 1s/);
+});
+
+test("a running job with a dead worker shows failed", async () => {
+  const { run } = setup({ FAKE_MODE: "sleep" });
+  const id = run("delegate", "--backend", "codex", "--mode", "read", "--", "x").out.split(" ")[0];
+  for (let i = 0; i < 50 && !job(run, id).backendPid; i += 1) await sleep(100);
+  const { pid, backendPid } = job(run, id);
+  process.kill(pid, "SIGKILL");
+  process.kill(-backendPid, "SIGKILL");
+  await sleep(200);
+  assert.match(run("status", id).out, / failed .*worker gone/);
+});
+
+test("ollama without a model leaves no worktree or branch", () => {
+  const { repo, env, run } = setup();
+  fs.mkdirSync(path.join(env.XDG_CONFIG_HOME, "skynet"));
+  fs.writeFileSync(path.join(env.XDG_CONFIG_HOME, "skynet", "config.json"), JSON.stringify({ backends: { ollama: { enabled: true, billing: "local" } } }));
+  const r = run("delegate", "--backend", "ollama", "--mode", "write", "--parallel", "--", "x");
+  assert.notEqual(r.code, 0);
+  assert.equal(execFileSync("git", ["branch", "--list", "*--ollama"], { cwd: repo, encoding: "utf8" }).trim(), "");
+  assert.deepEqual(fs.readdirSync(env.CLAUDE_SCRATCHPAD), []);
+});
+
+test("a brief on stdin keeps quotes and dollars", () => {
+  const { repo, env } = setup();
+  const brief = `say "hi" and $HOME \`x\` !`;
+  const r = spawnSync(process.execPath, [cli, "delegate", "--backend", "codex", "--mode", "read", "--wait"], { cwd: repo, env, input: brief, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(r.stdout.includes(`fake codex: ${brief}`));
+});
+
+test("wait blocks until the job ends, or times out with exit 3", async () => {
+  const { run } = setup();
+  const id = run("delegate", "--backend", "codex", "--mode", "read", "--", "w").out.split(" ")[0];
+  const done = run("wait", id, "--timeout-s", "10");
+  assert.equal(done.code, 0);
+  assert.match(done.out, / completed/);
+  const slow = setup({ FAKE_MODE: "sleep" });
+  const sid = slow.run("delegate", "--backend", "codex", "--mode", "read", "--", "w").out.split(" ")[0];
+  const pending = slow.run("wait", sid, "--timeout-s", "1");
+  assert.equal(pending.code, 3);
+  assert.match(pending.out, / (queued|running)/);
+  slow.run("cancel", sid);
 });

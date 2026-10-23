@@ -1,5 +1,5 @@
 // argv for each backend. Ollama runs through codex --oss so it gets codex's harness and sandbox.
-// agy takes the prompt as the -p value (it does not read stdin) and keeps slash commands on,
+// agy takes the prompt as -p=<text> (it does not read stdin; the = keeps a leading "-" from reading as a flag) and keeps slash commands on,
 // because --disable-slash-commands turns plan mode off.
 // Ollama gets its own empty CODEX_HOME (ossHome): the user's codex config, MCP servers, skills
 // and AGENTS.md swamp a local model, which then calls tools that do not exist.
@@ -23,7 +23,7 @@ export function buildInvocation(backend, { mode, cwd, promptFile, outFile, promp
     if (mode === "write") {
       args.push("--sandbox");
     }
-    return { cmd: "agy", args: [...args, "-p", prompt], stdoutFile: outFile };
+    return { cmd: "agy", args: [...args, `-p=${prompt}`], stdoutFile: outFile };
   }
   throw new Error(`unknown backend ${backend}`);
 }
