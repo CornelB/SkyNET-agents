@@ -50,3 +50,21 @@ test("unknown backend throws", () => {
 test("agy prompt that starts with a dash stays one value", () => {
   assert.equal(buildInvocation("agy", { ...io, prompt: "- fix a", mode: "read" }).args.at(-1), "-p=- fix a");
 });
+
+test("openrouter runs through opencode with a job permission config", () => {
+  const inv = buildInvocation("openrouter", { ...io, mode: "write", model: "poolside/laguna-s-2.1:free" });
+  assert.equal(inv.cmd, "opencode");
+  assert.deepEqual(inv.args, ["run", "--standalone", "-m", "openrouter/poolside/laguna-s-2.1:free", "--agent", "build", "--auto", "--", "do it"]);
+  assert.equal(inv.stdoutFile, "/jobs/out.md");
+  const { permission } = JSON.parse(inv.env.OPENCODE_CONFIG_CONTENT);
+  assert.equal(permission.read["*.env"], "deny");
+  assert.equal(permission.external_directory, "deny");
+});
+
+test("openrouter read uses the plan agent", () => {
+  assert.equal(buildInvocation("openrouter", { ...io, mode: "read", model: "m" }).args[5], "plan");
+});
+
+test("openrouter without a model throws", () => {
+  assert.throws(() => buildInvocation("openrouter", { ...io, mode: "read" }), /openrouter model not configured/);
+});

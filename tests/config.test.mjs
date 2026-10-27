@@ -25,7 +25,8 @@ test("detectBackends reads login and ollama models", () => {
     "codex login status": { status: 0, stdout: "", stderr: "Logged in using ChatGPT\n" },
     "agy --version": { status: 0, stdout: "1.4.6\n" },
     "ollama list": { status: 0, stdout: "NAME   ID   SIZE   MODIFIED\nqwen3.6:35b-a3b   1fac   22 GB   1 h ago\ngemma4:26b   2dd7   15 GB   10 d ago\n" },
-    "codexbar --version": { status: 0, stdout: "1.0\n" }
+    "codexbar --version": { status: 0, stdout: "1.0\n" },
+    "opencode auth list": { status: 0, stdout: "OpenRouter  OPENROUTER_API_KEY  environment\n" }
   };
   const run = (cmd, args) => outputs[`${cmd} ${args.join(" ")}`] ?? { status: 0, stdout: "", stderr: "", error: null };
   const found = detectBackends({ run });
@@ -33,6 +34,7 @@ test("detectBackends reads login and ollama models", () => {
   assert.equal(found.agy.installed, true);
   assert.deepEqual(found.ollama.models, ["qwen3.6:35b-a3b", "gemma4:26b"]);
   assert.equal(found.codexbar.installed, true);
+  assert.deepEqual(found.openrouter, { installed: true, keySet: true });
 });
 
 test("detectBackends marks missing CLIs", () => {
@@ -41,4 +43,5 @@ test("detectBackends marks missing CLIs", () => {
   assert.equal(found.codex.installed, false);
   assert.equal(found.codex.loggedIn, false);
   assert.deepEqual(found.ollama.models, []);
+  assert.deepEqual(found.openrouter, { installed: false, keySet: false });
 });

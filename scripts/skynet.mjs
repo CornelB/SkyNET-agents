@@ -19,8 +19,9 @@ import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
 import { createWorkerTree, finishWorkerTree } from "./lib/worktree.mjs";
 
 const SELF = fileURLToPath(import.meta.url);
-const BACKENDS = ["codex", "agy", "ollama"];
+const BACKENDS = ["codex", "agy", "openrouter", "ollama"];
 
+const DEFAULT_BILLING = { ollama: "local", openrouter: "free" };
 const DEFAULT_TIMEOUT_S = 3600;
 const ACTIVE = new Set(["queued", "running"]);
 
@@ -74,6 +75,7 @@ function setup(options) {
     const state = (name) => (cfg[name] ? `${cfg[name].enabled ? "enabled" : "disabled"} ${cfg[name].billing ?? ""}`.trim() : "not configured");
     print(`codex ${found.codex.installed ? (found.codex.loggedIn ? "logged in" : "not logged in") : "missing"}, ${state("codex")}`);
     print(`agy ${found.agy.installed ? "installed" : "missing"}, ${state("agy")}`);
+    print(`openrouter ${found.openrouter.installed ? (found.openrouter.keySet ? "opencode, key set" : "opencode, no key") : "opencode missing"}, ${state("openrouter")}`);
     print(`ollama ${found.ollama.installed ? `models: ${found.ollama.models.join(", ") || "none"}` : "missing"}, ${state("ollama")}`);
     print(`codexbar ${found.codexbar.installed ? "installed" : "missing"}`);
     return 0;
@@ -86,9 +88,10 @@ function setup(options) {
   const billing = Object.fromEntries(list(options.billing).map((pair) => pair.split("=")));
   const backends = {};
   for (const name of BACKENDS) {
-    backends[name] = { enabled: enabled.includes(name), billing: billing[name] ?? (name === "ollama" ? "local" : "subscription") };
+    backends[name] = { enabled: enabled.includes(name), billing: billing[name] ?? DEFAULT_BILLING[name] ?? "subscription" };
   }
   if (options["ollama-model"]) backends.ollama.model = options["ollama-model"];
+  if (options["openrouter-model"]) backends.openrouter.model = options["openrouter-model"];
   if (options["agy-window"]) backends.agy.window = options["agy-window"];
   saveConfig({ backends });
   print(`saved ${configPath()}`);
@@ -141,7 +144,7 @@ async function delegate(options, positionals) {
   const promptFile = path.join(jobsDir, `${id}.prompt.md`);
   const outFile = path.join(jobsDir, `${id}.out.md`);
   const prompt = composePrompt(brief, { mode: options.mode, paths: list(options.paths) });
-  // Fail before creating anything when the invocation cannot be built (e.g. no ollama model).
+  // Fail before creating anything when the invocation cannot be built (e.g. no ollama or openrouter model).
   buildInvocation(backend, { mode: options.mode, cwd: workspaceRoot, promptFile, outFile, prompt, model: config.backends[backend]?.model, ossHome: ossHome() });
   const timeoutS = Number(options["timeout-s"] ?? (config.timeoutMinutes ? config.timeoutMinutes * 60 : DEFAULT_TIMEOUT_S));
   if (!(timeoutS > 0)) {
@@ -309,7 +312,7 @@ function buildSingle(workspaceRoot, reference) {
 async function main(argv) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArgs(rest, {
-    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "agy-window", "timeout-s"],
+    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "openrouter-model", "agy-window", "timeout-s"],
     booleanOptions: ["parallel", "wait", "json", "all"]
   });
   switch (command) {

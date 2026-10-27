@@ -135,6 +135,10 @@ test("setup saves the config from flags", () => {
   assert.deepEqual(saved.backends.codex, { enabled: true, billing: "per-token" });
   assert.deepEqual(saved.backends.agy, { enabled: false, billing: "subscription" });
   assert.deepEqual(saved.backends.ollama, { enabled: true, billing: "local", model: "m1" });
+  assert.deepEqual(saved.backends.openrouter, { enabled: false, billing: "free" });
+  assert.equal(run("setup", "--enable", "openrouter", "--openrouter-model", "a/b:free").code, 0);
+  const again = JSON.parse(fs.readFileSync(path.join(env.XDG_CONFIG_HOME, "skynet", "config.json"), "utf8"));
+  assert.deepEqual(again.backends.openrouter, { enabled: true, billing: "free", model: "a/b:free" });
   assert.equal(run("setup", "--enable", "grok").code, 2);
 });
 

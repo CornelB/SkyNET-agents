@@ -1,5 +1,5 @@
 ---
-description: Delegate work to Codex, Antigravity or local Ollama, picked by live usage
+description: Delegate work to Codex, Antigravity, OpenRouter or local Ollama, picked by live usage
 argument-hint: '[what to delegate]'
 allowed-tools: Bash(node:*), Bash(git:*)
 ---

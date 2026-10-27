@@ -3,6 +3,15 @@
 // because --disable-slash-commands turns plan mode off.
 // Ollama gets its own empty CODEX_HOME (ossHome): the user's codex config, MCP servers, skills
 // and AGENTS.md swamp a local model, which then calls tools that do not exist.
+// OpenRouter runs through opencode. Free endpoints may log prompts, so secrets stay out of reach.
+const OPENCODE_JOB_CONFIG = {
+  permission: {
+    read: { "*.env": "deny", "*.env.*": "deny", "*.env.example": "allow" },
+    external_directory: "deny",
+    question: "deny"
+  }
+};
+
 export function buildInvocation(backend, { mode, cwd, promptFile, outFile, prompt, model, ossHome }) {
   if (backend === "codex" || backend === "ollama") {
     const args = ["exec", "--skip-git-repo-check", "-C", cwd, "-s", mode === "write" ? "workspace-write" : "read-only", "-o", outFile];
@@ -24,6 +33,16 @@ export function buildInvocation(backend, { mode, cwd, promptFile, outFile, promp
       args.push("--sandbox");
     }
     return { cmd: "agy", args: [...args, `-p=${prompt}`], stdoutFile: outFile };
+  }
+  if (backend === "openrouter") {
+    if (!model) {
+      throw new Error("openrouter model not configured");
+    }
+    // --standalone: a private server that sees this job's cwd and env, not the background service.
+    // --auto approves "ask" rules, so the job config denies what must stay local: .env files, paths
+    // outside the tree, and questions nobody is there to answer.
+    const args = ["run", "--standalone", "-m", `openrouter/${model}`, "--agent", mode === "write" ? "build" : "plan", "--auto", "--", prompt];
+    return { cmd: "opencode", args, stdoutFile: outFile, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_JOB_CONFIG) } };
   }
   throw new Error(`unknown backend ${backend}`);
 }

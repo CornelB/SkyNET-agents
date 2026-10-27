@@ -34,7 +34,10 @@ export function detectBackends({ run = runCommand } = {}) {
   const codexVersion = probe(run, "codex", ["--version"]);
   const codexLogin = codexVersion.ok ? probe(run, "codex", ["login", "status"]) : { ok: false, output: "" };
   const ollama = probe(run, "ollama", ["list"]);
+  const opencode = probe(run, "opencode", ["--version"]);
+  const opencodeAuth = opencode.ok ? probe(run, "opencode", ["auth", "list"]) : { ok: false, output: "" };
   return {
+    openrouter: { installed: opencode.ok, keySet: opencodeAuth.ok && /openrouter/i.test(opencodeAuth.output) },
     codex: { installed: codexVersion.ok, loggedIn: codexLogin.ok && /Logged in/.test(codexLogin.output) },
     agy: { installed: probe(run, "agy", ["--version"]).ok },
     ollama: {

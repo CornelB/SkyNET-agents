@@ -37,6 +37,12 @@ function assess(backend, usage, cfg) {
   if (backend === "ollama") {
     return { backend, available: true, tier: 2, room: 0, status: "ollama local" };
   }
+  // OpenRouter has no plan windows. Free models share ollama's tier and win the tie by list order.
+  if (backend === "openrouter") {
+    return cfg.billing === "per-token"
+      ? { backend, available: true, tier: 4, room: 0, status: "openrouter per-token" }
+      : { backend, available: true, tier: 2, room: 0, status: "openrouter free" };
+  }
   const entry = usage.find((e) => e.provider === CLOUD[backend]);
   if (entry?.error) {
     return { backend, available: false, status: `${backend} error` };
@@ -61,7 +67,7 @@ function assess(backend, usage, cfg) {
 
 export function route(usage, config) {
   const backends = config.backends ?? {};
-  const assessed = ["codex", "agy", "ollama"].map((backend) =>
+  const assessed = ["codex", "agy", "openrouter", "ollama"].map((backend) =>
     backends[backend]?.enabled ? assess(backend, usage, backends[backend]) : { backend, available: false, disabled: true, status: `${backend} disabled` }
   );
   const pick = assessed

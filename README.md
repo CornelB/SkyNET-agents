@@ -1,12 +1,12 @@
 # skynet
 
-A Claude Code plugin that delegates work to Codex, Antigravity (`agy`) or local Ollama. It picks the backend from live usage (codexbar) and the machine's billing setup, so Claude and Codex quota lasts longer. Workers edit the tree directly; the lead reviews the diff.
+A Claude Code plugin that delegates work to Codex, Antigravity (`agy`), OpenRouter or local Ollama. It picks the backend from live usage (codexbar) and the machine's billing setup, so Claude and Codex quota lasts longer. Workers edit the tree directly; the lead reviews the diff.
 
 ## Needs
 
 - `node` 22+, `python3`, `git`
 - [`codexbar`](https://github.com/steipete/CodexBar) for usage
-- one or more of `codex`, `agy`, `ollama`. Ollama runs through `codex exec --oss`, so it needs `codex` too.
+- one or more of `codex`, `agy`, `opencode`, `ollama`. Ollama runs through `codex exec --oss`, so it needs `codex` too. OpenRouter runs through `opencode run` and needs `OPENROUTER_API_KEY`.
 
 ## Install (local)
 

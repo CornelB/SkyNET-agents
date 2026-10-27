@@ -71,7 +71,7 @@ test("grok is never routed", () => {
 test("all full names the reset", () => {
   const r = route([codex(95, 6), agy(99)], cfg({ ollama: off }));
   assert.equal(r.backend, null);
-  assert.match(r.line, /^no backend: codex 5h 95% full until \d\d:\d\d, agy Gemini Models 99% full until \d\d:\d\d, ollama disabled$/);
+  assert.match(r.line, /^no backend: codex 5h 95% full until \d\d:\d\d, agy Gemini Models 99% full until \d\d:\d\d, openrouter disabled, ollama disabled$/);
 });
 
 test("handoff levels follow claude week", () => {
@@ -91,4 +91,20 @@ test("a reset on another day carries its date", () => {
   const later = new Date(Date.now() + 3 * 86400_000).toISOString();
   const r = route([{ provider: "codex", windows: [{ name: "week", used_percent: 99, resets_at: later }] }], cfg({ agy: off, ollama: off }));
   assert.match(r.line, /full until \d\d [A-Z][a-z]{2} \d\d:\d\d/);
+});
+
+test("free openrouter wins the free tier over ollama", () => {
+  const r = route([codex(80, 6)], cfg({ agy: off, openrouter: { enabled: true, billing: "free", model: "m" } }));
+  assert.equal(r.backend, "openrouter");
+  assert.match(r.line, /^→ openrouter \(openrouter free, codex 5h 80% near full, ollama local\)$/);
+});
+
+test("subscription with room beats free openrouter", () => {
+  assert.equal(route([codex(10, 6)], cfg({ agy: off, openrouter: { enabled: true, billing: "free", model: "m" } })).backend, "codex");
+});
+
+test("per-token openrouter ranks last", () => {
+  const openrouter = { enabled: true, billing: "per-token", model: "m" };
+  assert.equal(route([codex(80, 6)], cfg({ agy: off, ollama: off, openrouter })).backend, "codex");
+  assert.equal(route([], cfg({ codex: off, agy: off, ollama: off, openrouter })).backend, "openrouter");
 });
