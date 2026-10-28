@@ -6,7 +6,7 @@
 Thumbs.db
 
 ### AI
-.claude -> .agents symlink
+# .claude -> .agents symlink
 .agents/worktrees/*
 
 ### Graphify
