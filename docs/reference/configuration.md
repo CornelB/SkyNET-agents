@@ -7,7 +7,11 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
   "backends": {
     "codex":  { "enabled": true,  "billing": "subscription" },
     "agy":    { "enabled": true,  "billing": "subscription", "window": "Gemini Models" },
-    "openrouter": { "enabled": true, "billing": "free", "model": "<openrouter model id>" },
+    "openrouter": {
+      "enabled": true,
+      "billing": "free",
+      "models": { "reasoning": "<model id>", "coding": "<model id>", "decision": "<model id>" }
+    },
     "ollama": { "enabled": true,  "billing": "local", "model": "<pulled model>" }
   }
 }
@@ -18,7 +22,9 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 | `backends.<name>.enabled` | `true`, `false` | `false` | A backend that is not enabled is never picked. |
 | `backends.<name>.billing` | `subscription`, `per-token`, `local`, `free` | `subscription`; `local` for ollama; `free` for openrouter | `per-token` backends rank after ollama. |
 | `backends.ollama.model` | an `ollama list` name | none, required for ollama | Model that `codex exec --oss --local-provider ollama` runs. |
-| `backends.openrouter.model` | an openrouter.ai model id, e.g. `vendor/name:free` | none, required for openrouter | Model that `opencode run -m openrouter/<id>` runs. |
+| `backends.openrouter.models.reasoning` | an openrouter.ai model id | `thinkingmachines/inkling-small:free` | Model for read jobs. |
+| `backends.openrouter.models.coding` | an openrouter.ai model id | `poolside/laguna-s-2.1:free` | Model for write jobs. |
+| `backends.openrouter.models.decision` | an openrouter.ai model id | `nvidia/nemotron-3.5-lightning:free` | Small, fast classifier model. Saved only; no job uses it yet. |
 | `backends.agy.window` | a codexbar window name | none: the highest agy window | The Antigravity usage window that counts for routing. |
 
 | `timeoutMinutes` | minutes | `60` | A job still running after this is killed and recorded as failed (`timed out`). `delegate --timeout-s` overrides it per job. |

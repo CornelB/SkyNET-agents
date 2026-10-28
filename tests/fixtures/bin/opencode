@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+// Fake opencode run: prints the -m model to stdout.
+const args = process.argv.slice(2);
+process.stdout.write(`fake opencode: ${args[args.indexOf("-m") + 1]}\n`);

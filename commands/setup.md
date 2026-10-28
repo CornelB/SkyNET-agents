@@ -7,7 +7,7 @@ allowed-tools: Bash(node:*), AskUserQuestion
 2. Ask in one AskUserQuestion call, only about backends that are installed:
    - which backends skynet may use (multi-select: codex, agy, openrouter, ollama);
    - for each chosen cloud backend, how it is paid: `subscription` (plan quota) or `per-token` (API key);
-   - for openrouter: how it is paid, `free` (a `:free` model) or `per-token`, and which model id from openrouter.ai/models (prefer a free model that supports tools);
+   - for openrouter: how it is paid, `free` or `per-token`. Its three models (reasoning, coding, decision) default to free-tier picks that step 1 shows; ask to change them only if the user wants to;
    - if ollama is chosen, which model, from the listed models (prefer a coding model).
-3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" setup --enable <list> --billing <name=billing,...> [--openrouter-model <id>] [--ollama-model <model>]`.
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" setup --enable <list> --billing <name=billing,...> [--openrouter-reasoning-model <id>] [--openrouter-coding-model <id>] [--openrouter-decision-model <id>] [--ollama-model <model>]`.
 4. Run step 1 again and show its lines. Say nothing else.

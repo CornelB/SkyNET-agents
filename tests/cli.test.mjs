@@ -135,10 +135,16 @@ test("setup saves the config from flags", () => {
   assert.deepEqual(saved.backends.codex, { enabled: true, billing: "per-token" });
   assert.deepEqual(saved.backends.agy, { enabled: false, billing: "subscription" });
   assert.deepEqual(saved.backends.ollama, { enabled: true, billing: "local", model: "m1" });
-  assert.deepEqual(saved.backends.openrouter, { enabled: false, billing: "free" });
-  assert.equal(run("setup", "--enable", "openrouter", "--openrouter-model", "a/b:free").code, 0);
+  assert.deepEqual(saved.backends.openrouter, {
+    enabled: false,
+    billing: "free",
+    models: { reasoning: "thinkingmachines/inkling-small:free", coding: "poolside/laguna-s-2.1:free", decision: "nvidia/nemotron-3.5-lightning:free" }
+  });
+  assert.equal(run("setup", "--enable", "openrouter", "--openrouter-coding-model", "a/b:free").code, 0);
   const again = JSON.parse(fs.readFileSync(path.join(env.XDG_CONFIG_HOME, "skynet", "config.json"), "utf8"));
-  assert.deepEqual(again.backends.openrouter, { enabled: true, billing: "free", model: "a/b:free" });
+  assert.equal(again.backends.openrouter.enabled, true);
+  assert.equal(again.backends.openrouter.models.coding, "a/b:free");
+  assert.equal(again.backends.openrouter.models.reasoning, "thinkingmachines/inkling-small:free");
   assert.equal(run("setup", "--enable", "grok").code, 2);
 });
 
@@ -234,4 +240,11 @@ test("wait blocks until the job ends, or times out with exit 3", async () => {
   assert.equal(pending.code, 3);
   assert.match(pending.out, / (queued|running)/);
   slow.run("cancel", sid);
+});
+
+test("openrouter write runs the coding model and read the reasoning model", () => {
+  const { run } = setup();
+  assert.equal(run("setup", "--enable", "openrouter", "--openrouter-coding-model", "c/x:free", "--openrouter-reasoning-model", "r/x:free").code, 0);
+  assert.match(run("delegate", "--backend", "openrouter", "--mode", "write", "--wait", "--", "x").out, /fake opencode: openrouter\/c\/x:free/);
+  assert.match(run("delegate", "--backend", "openrouter", "--mode", "read", "--wait", "--", "x").out, /fake opencode: openrouter\/r\/x:free/);
 });

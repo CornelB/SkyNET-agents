@@ -22,6 +22,15 @@ const SELF = fileURLToPath(import.meta.url);
 const BACKENDS = ["codex", "agy", "openrouter", "ollama"];
 
 const DEFAULT_BILLING = { ollama: "local", openrouter: "free" };
+// Free-tier picks (openrouter.ai, Oct 2026): best Intelligence Index score, the coding agent model,
+// and a small fast model for classification. setup flags override each one.
+const OPENROUTER_MODELS = {
+  reasoning: "thinkingmachines/inkling-small:free",
+  coding: "poolside/laguna-s-2.1:free",
+  decision: "nvidia/nemotron-3.5-lightning:free"
+};
+// OpenRouter write jobs run the coding model and read jobs the reasoning model; the other backends have one model.
+const modelFor = (cfg, mode) => (cfg?.models ? cfg.models[mode === "write" ? "coding" : "reasoning"] : cfg?.model);
 const DEFAULT_TIMEOUT_S = 3600;
 const ACTIVE = new Set(["queued", "running"]);
 
@@ -72,10 +81,11 @@ function setup(options) {
   if (!options.enable) {
     const found = detectBackends();
     const cfg = loadConfig().backends;
-    const state = (name) => (cfg[name] ? `${cfg[name].enabled ? "enabled" : "disabled"} ${cfg[name].billing ?? ""}`.trim() : "not configured");
+    const roles = (models) => (models ? ` ${Object.entries(models).map(([role, id]) => `${role}=${id}`).join(" ")}` : "");
+    const state = (name) => (cfg[name] ? `${cfg[name].enabled ? "enabled" : "disabled"} ${cfg[name].billing ?? ""}${roles(cfg[name].models)}`.trim() : "not configured");
     print(`codex ${found.codex.installed ? (found.codex.loggedIn ? "logged in" : "not logged in") : "missing"}, ${state("codex")}`);
     print(`agy ${found.agy.installed ? "installed" : "missing"}, ${state("agy")}`);
-    print(`openrouter ${found.openrouter.installed ? (found.openrouter.keySet ? "opencode, key set" : "opencode, no key") : "opencode missing"}, ${state("openrouter")}`);
+    print(`openrouter ${found.openrouter.installed ? (found.openrouter.keySet ? "opencode, key set" : "opencode, no key") : "opencode missing"}, ${cfg.openrouter ? state("openrouter") : `not configured, defaults${roles(OPENROUTER_MODELS)}`}`);
     print(`ollama ${found.ollama.installed ? `models: ${found.ollama.models.join(", ") || "none"}` : "missing"}, ${state("ollama")}`);
     print(`codexbar ${found.codexbar.installed ? "installed" : "missing"}`);
     return 0;
@@ -91,7 +101,7 @@ function setup(options) {
     backends[name] = { enabled: enabled.includes(name), billing: billing[name] ?? DEFAULT_BILLING[name] ?? "subscription" };
   }
   if (options["ollama-model"]) backends.ollama.model = options["ollama-model"];
-  if (options["openrouter-model"]) backends.openrouter.model = options["openrouter-model"];
+  backends.openrouter.models = Object.fromEntries(Object.entries(OPENROUTER_MODELS).map(([role, id]) => [role, options[`openrouter-${role}-model`] ?? id]));
   if (options["agy-window"]) backends.agy.window = options["agy-window"];
   saveConfig({ backends });
   print(`saved ${configPath()}`);
@@ -145,7 +155,7 @@ async function delegate(options, positionals) {
   const outFile = path.join(jobsDir, `${id}.out.md`);
   const prompt = composePrompt(brief, { mode: options.mode, paths: list(options.paths) });
   // Fail before creating anything when the invocation cannot be built (e.g. no ollama or openrouter model).
-  buildInvocation(backend, { mode: options.mode, cwd: workspaceRoot, promptFile, outFile, prompt, model: config.backends[backend]?.model, ossHome: ossHome() });
+  buildInvocation(backend, { mode: options.mode, cwd: workspaceRoot, promptFile, outFile, prompt, model: modelFor(config.backends[backend], options.mode), ossHome: ossHome() });
   const timeoutS = Number(options["timeout-s"] ?? (config.timeoutMinutes ? config.timeoutMinutes * 60 : DEFAULT_TIMEOUT_S));
   if (!(timeoutS > 0)) {
     throw new UsageError("--timeout-s must be a positive number");
@@ -165,7 +175,7 @@ async function delegate(options, positionals) {
     cwd: tree?.path ?? workspaceRoot,
     promptFile,
     outFile,
-    model: config.backends[backend]?.model ?? null,
+    model: modelFor(config.backends[backend], options.mode) ?? null,
     timeoutS,
     tree,
     logFile: resolveJobLogFile(workspaceRoot, id)
@@ -312,7 +322,7 @@ function buildSingle(workspaceRoot, reference) {
 async function main(argv) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArgs(rest, {
-    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "openrouter-model", "agy-window", "timeout-s"],
+    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "openrouter-reasoning-model", "openrouter-coding-model", "openrouter-decision-model", "agy-window", "timeout-s"],
     booleanOptions: ["parallel", "wait", "json", "all"]
   });
   switch (command) {
