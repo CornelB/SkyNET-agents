@@ -8,7 +8,7 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
     "codex":  { "enabled": true,  "billing": "subscription" },
     "agy":    { "enabled": true,  "billing": "subscription", "window": "Gemini Models" },
     "openrouter": {
-      "enabled": true,
+      "enabled": false,
       "billing": "free",
       "models": { "reasoning": "<model id>", "coding": "<model id>", "decision": "<model id>", "fallback": "<model id>" }
     },
@@ -19,7 +19,7 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 
 | Key | Values | Default | Meaning |
 |-----|--------|---------|---------|
-| `backends.<name>.enabled` | `true`, `false` | `false` | A backend that is not enabled is never picked. |
+| `backends.<name>.enabled` | `true`, `false` | `false` | A backend that is not enabled is never picked. Setup enables only the backends named in `--enable`. Keep openrouter off on the free tier: free models share a small daily request cap, and one job spends many requests. |
 | `backends.<name>.billing` | `subscription`, `per-token`, `local`, `free` | `subscription`; `local` for ollama; `free` for openrouter | `per-token` backends rank after ollama. |
 | `backends.ollama.model` | an `ollama list` name | none, required for ollama | Model that `codex exec --oss --local-provider ollama` runs. |
 | `backends.openrouter.models.reasoning` | an openrouter.ai model id | `thinkingmachines/inkling-small:free` | Model for read jobs. |
