@@ -29,6 +29,9 @@ Then run `/skynet:setup`.
 | `/skynet:cancel [job]` | Stop a running job. |
 | skill `skynet:usage` | Usage lines from codexbar. |
 | agent `skynet:delegate` | The same delegation as a subagent type. |
+| agent `skynet:git-summarizer` | Summarizes long git logs and diffs. Read-only, haiku. |
+| agent `skynet:log-reader` | Returns only the relevant errors from a long log. Read-only, haiku. |
+| agent `skynet:web-lookup` | Answers one factual question from the web, with sources. Haiku. |
 
 Configuration and routing rules: [docs/reference/configuration.md](docs/reference/configuration.md).
 
