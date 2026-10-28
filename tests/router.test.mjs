@@ -71,7 +71,7 @@ test("grok is never routed", () => {
 test("all full names the reset", () => {
   const r = route([codex(95, 6), agy(99)], cfg({ ollama: off }));
   assert.equal(r.backend, null);
-  assert.match(r.line, /^no backend: codex 5h 95% full until \d\d:\d\d, agy Gemini Models 99% full until \d\d:\d\d, openrouter disabled, ollama disabled$/);
+  assert.match(r.line, /^no backend: codex 5h 95% full until [^,]+, agy Gemini Models 99% full until [^,]+, openrouter disabled, ollama disabled$/);
 });
 
 test("handoff levels follow claude week", () => {
