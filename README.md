@@ -22,6 +22,7 @@ Then run `/skynet:setup`.
 | Command | Does |
 |---------|------|
 | `/skynet:setup` | Detect backends, save which may be used and how each is paid. |
+| `/skynet:workflow <task>` | Plan a fan-out: each piece goes to you, a Claude subagent (model and effort set) or an external worker. |
 | `/skynet:delegate <task>` | Route, brief and start one or more jobs. |
 | `/skynet:status [job]` | List jobs. A running job whose worker died shows as failed. |
 | `/skynet:result [job]` | Show a finished job's output. |
