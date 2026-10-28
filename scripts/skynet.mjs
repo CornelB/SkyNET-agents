@@ -23,12 +23,15 @@ const BACKENDS = ["codex", "agy", "openrouter", "ollama"];
 
 const DEFAULT_BILLING = { ollama: "local", openrouter: "free" };
 // Free-tier picks (openrouter.ai, Oct 2026): best Intelligence Index score, the coding agent model,
-// and a small fast model for classification. setup flags override each one.
+// a small fast model for classification, and the free router for a rate-limited job's one retry.
+// setup flags override each one.
 const OPENROUTER_MODELS = {
   reasoning: "thinkingmachines/inkling-small:free",
   coding: "poolside/laguna-s-2.1:free",
-  decision: "nvidia/nemotron-3.5-lightning:free"
+  decision: "nvidia/nemotron-3.5-lightning:free",
+  fallback: "openrouter/free"
 };
+const RATE_LIMITED = /\b429\b|rate[ -]?limit/i;
 // OpenRouter write jobs run the coding model and read jobs the reasoning model; the other backends have one model.
 const modelFor = (cfg, mode) => (cfg?.models ? cfg.models[mode === "write" ? "coding" : "reasoning"] : cfg?.model);
 const DEFAULT_TIMEOUT_S = 3600;
@@ -176,6 +179,7 @@ async function delegate(options, positionals) {
     promptFile,
     outFile,
     model: modelFor(config.backends[backend], options.mode) ?? null,
+    fallbackModel: config.backends[backend]?.models?.fallback ?? null,
     timeoutS,
     tree,
     logFile: resolveJobLogFile(workspaceRoot, id)
@@ -231,17 +235,26 @@ async function worker(id, workspaceRoot = process.cwd()) {
     throw new UsageError(`no job ${id}`);
   }
   const prompt = fs.readFileSync(job.promptFile, "utf8");
-  const invocation = buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model: job.model, ossHome: ossHome() });
-  appendLogLine(job.logFile, `starting ${job.backend}`);
-  await runTrackedJob(job, async () => {
-    const { code, lastErr } = await runBackend(invocation, {
+  const attempt = (model) =>
+    runBackend(buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model, ossHome: ossHome() }), {
       cwd: job.cwd,
       logFile: job.logFile,
       timeoutS: job.timeoutS ?? DEFAULT_TIMEOUT_S,
       onSpawn: (backendPid) => patchJob(workspaceRoot, id, { backendPid })
     });
+  appendLogLine(job.logFile, `starting ${job.backend}`);
+  await runTrackedJob(job, async () => {
+    let { code, lastErr } = await attempt(job.model);
+    // A rate-limited model gets one retry on the fallback. A write job's retry starts from the tree the
+    // first attempt left, partial edits included.
+    const output = () => `${fs.readFileSync(job.logFile, "utf8")}${fs.existsSync(job.outFile) ? fs.readFileSync(job.outFile, "utf8") : ""}`;
+    const stopped = () => readStoredJob(workspaceRoot, id)?.status === "cancelled";
+    if (code !== 0 && job.fallbackModel && job.fallbackModel !== job.model && !stopped() && RATE_LIMITED.test(output())) {
+      appendLogLine(job.logFile, `${job.model} rate limited, retrying on ${job.fallbackModel}`);
+      ({ code, lastErr } = await attempt(job.fallbackModel));
+    }
     let summary = code === 0 ? null : lastErr || `exit ${code}`;
-    const cancelled = readStoredJob(workspaceRoot, id)?.status === "cancelled";
+    const cancelled = stopped();
     if (!cancelled && code !== 0 && job.tree) {
       summary = `${summary}, worktree kept at ${job.tree.path}`;
     }
@@ -322,7 +335,7 @@ function buildSingle(workspaceRoot, reference) {
 async function main(argv) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArgs(rest, {
-    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "openrouter-reasoning-model", "openrouter-coding-model", "openrouter-decision-model", "agy-window", "timeout-s"],
+    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "openrouter-reasoning-model", "openrouter-coding-model", "openrouter-decision-model", "openrouter-fallback-model", "agy-window", "timeout-s"],
     booleanOptions: ["parallel", "wait", "json", "all"]
   });
   switch (command) {

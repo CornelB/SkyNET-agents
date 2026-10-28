@@ -1,4 +1,9 @@
 #!/usr/bin/env node
-// Fake opencode run: prints the -m model to stdout.
+// Fake opencode run: prints the -m model to stdout. FAKE_RATE_LIMIT=1 fails every model but the free router with a 429.
 const args = process.argv.slice(2);
-process.stdout.write(`fake opencode: ${args[args.indexOf("-m") + 1]}\n`);
+const model = args[args.indexOf("-m") + 1];
+if (process.env.FAKE_RATE_LIMIT && model !== "openrouter/openrouter/free") {
+  process.stderr.write("Error: 429 rate limited upstream\n");
+  process.exit(1);
+}
+process.stdout.write(`fake opencode: ${model}\n`);

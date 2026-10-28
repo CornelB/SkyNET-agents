@@ -138,7 +138,7 @@ test("setup saves the config from flags", () => {
   assert.deepEqual(saved.backends.openrouter, {
     enabled: false,
     billing: "free",
-    models: { reasoning: "thinkingmachines/inkling-small:free", coding: "poolside/laguna-s-2.1:free", decision: "nvidia/nemotron-3.5-lightning:free" }
+    models: { reasoning: "thinkingmachines/inkling-small:free", coding: "poolside/laguna-s-2.1:free", decision: "nvidia/nemotron-3.5-lightning:free", fallback: "openrouter/free" }
   });
   assert.equal(run("setup", "--enable", "openrouter", "--openrouter-coding-model", "a/b:free").code, 0);
   const again = JSON.parse(fs.readFileSync(path.join(env.XDG_CONFIG_HOME, "skynet", "config.json"), "utf8"));
@@ -247,4 +247,20 @@ test("openrouter write runs the coding model and read the reasoning model", () =
   assert.equal(run("setup", "--enable", "openrouter", "--openrouter-coding-model", "c/x:free", "--openrouter-reasoning-model", "r/x:free").code, 0);
   assert.match(run("delegate", "--backend", "openrouter", "--mode", "write", "--wait", "--", "x").out, /fake opencode: openrouter\/c\/x:free/);
   assert.match(run("delegate", "--backend", "openrouter", "--mode", "read", "--wait", "--", "x").out, /fake opencode: openrouter\/r\/x:free/);
+});
+
+test("a rate-limited openrouter job retries once on the fallback model", () => {
+  const { run } = setup({ FAKE_RATE_LIMIT: "1" });
+  assert.equal(run("setup", "--enable", "openrouter").code, 0);
+  const r = run("delegate", "--backend", "openrouter", "--mode", "read", "--wait", "--", "x");
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /fake opencode: openrouter\/openrouter\/free/);
+});
+
+test("a rate-limited job without a different fallback fails", () => {
+  const { run } = setup({ FAKE_RATE_LIMIT: "1" });
+  assert.equal(run("setup", "--enable", "openrouter", "--openrouter-fallback-model", "thinkingmachines/inkling-small:free").code, 0);
+  const r = run("delegate", "--backend", "openrouter", "--mode", "read", "--wait", "--", "x");
+  assert.equal(r.code, 1);
+  assert.match(r.out, /429 rate limited/);
 });
