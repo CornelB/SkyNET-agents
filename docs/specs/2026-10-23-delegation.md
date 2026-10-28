@@ -18,7 +18,7 @@ A Claude Code plugin that lets the lead agent of a session hand work to other ha
 
 ## Non-goals
 
-- Reviews. `review-council` covers them. No review, adversarial-review, or stop-time review gate.
+- Reviews. `review-board` covers them. No review, adversarial-review, or stop-time review gate.
 - Session transfer.
 - Grok as a delegation target. The usage skill may still report it.
 - Cross-repo delegation. A session delegates inside its own repo.
@@ -39,7 +39,7 @@ A Claude Code plugin that lets the lead agent of a session hand work to other ha
   - Codex: `codex exec`, sandbox `workspace-write` (write) or `read-only`.
   - Antigravity: `agy -p` with its sandbox and auto-approved tools.
   - Ollama: `codex exec --oss --local-provider ollama`, so Ollama gets the Codex harness, sandbox and edit tools. No agent loop of our own.
-- **`skynet:usage`.** The `ai-usage` skill moves from SkyNET-skills into this plugin and is deleted there. Codex loses the skill. `review-council` (SkyNET-review, `scripts/lib/codex-usage.py`) looks for it at the plugin's install path; without skynet installed it falls back to its existing `codex app-server` source.
+- **`skynet:usage`.** The `ai-usage` skill moves from SkyNET-skills into this plugin and is deleted there. Codex loses the skill. `review-board` (SkyNET-review, `scripts/lib/codex-usage.py`) looks for it at the plugin's install path; without skynet installed it falls back to its existing `codex app-server` source.
 - **`skynet:setup`.** Detects which backends are on PATH and logged in, checks `codexbar`, lists pulled Ollama models, asks how each backend is paid (subscription quota, pay per token, local). Writes a gitignored machine-local config. A backend setup did not enable is never routed to.
 - **`skynet:delegate`** command plus a matching subagent type. Input: a brief, a mode (write or read-only), optional paths. The lead picks the mode, never the worker.
 - **`skynet:status`, `skynet:result`, `skynet:cancel`** over all backends.

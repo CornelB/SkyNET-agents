@@ -23,7 +23,7 @@ Do not run `codexbar usage --provider all`. Do not use a reset credit. Do not re
 - **5h window**: the usage limit that resets 5 hours after it starts.
 - **week window**: the usage limit that resets 7 days after it starts.
 - **model window**: a limit for one model or model family only, for example `Fable only` or `Gemini Models`. It applies only to work that uses that model.
-- **delegation**: any task that you send to a provider, for example `/skynet:delegate`, a review council seat, or a worker session.
+- **delegation**: any task that you send to a provider, for example `/skynet:delegate`, a review-board seat, or a worker session.
 
 ## Step 1: Choose the command
 
