@@ -26,3 +26,16 @@ test("result and cancel resolve jobs by status", () => {
   assert.equal(resolveCancelableJob(cwd).job.id, "dlg-b");
   assert.throws(() => resolveResultJob(cwd, "dlg-b"), /still running/);
 });
+
+test("concurrent writers lose no jobs", async () => {
+  const { spawn } = await import("node:child_process");
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "skynet-cwd-"));
+  const stateUrl = new URL("../scripts/lib/state.mjs", import.meta.url).href;
+  const writer = (n) =>
+    new Promise((resolve) => {
+      const code = `const { upsertJob } = await import(${JSON.stringify(stateUrl)}); for (let i = 0; i < 10; i++) upsertJob(${JSON.stringify(cwd)}, { id: "w${n}-" + i, status: "queued" });`;
+      spawn(process.execPath, ["--input-type=module", "-e", code], { env: process.env, stdio: "ignore" }).on("exit", resolve);
+    });
+  await Promise.all([0, 1, 2, 3].map(writer));
+  assert.equal(listJobs(cwd).length, 40);
+});
