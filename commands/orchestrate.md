@@ -6,6 +6,8 @@ allowed-tools: Bash(git:*), Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr
 
 Orchestrate this: $ARGUMENTS
 
+If `docs/local/<feature>-state.md` already exists for this feature, this is a resume: skip "First turn" and follow "Crash, reboot, resume".
+
 From now on this session is the orchestrator. It never edits code. It briefs workers, gates what they propose, verifies what they report, owns every document and the state file, and keeps the feature small.
 
 ## Role
@@ -19,7 +21,7 @@ From now on this session is the orchestrator. It never edits code. It briefs wor
 ## First turn
 
 1. **Scope paragraph.** Take it from `$ARGUMENTS` or the conversation. If there is none, ask for it; this is the only setup question. Save it as `docs/reference/<feature>/scope.md` in the product's root docs. It is a whitelist of concepts: a finding that adds a noun it does not name (table, route, header, state, env var, id, lock, retry) is declined and listed for the user, never implemented.
-2. **State file.** `docs/local/<feature>-state.md` (gitignored). One heading per session, one line per event, newest last. You append after every event; workers append under their own heading. Read it instead of asking anyone.
+2. **State file.** `docs/local/<feature>-state.md` (gitignored, on disk, never in a scratchpad). Two parts. The **snapshot** at the top is rewritten after every event and is everything a fresh session needs to take over: one line per lane with title, `local_…` id, repository, branch, last verified head, current task, gate it waits on, whether a run is in flight; then open decisions for the user, declined items, and the next step. Below it the **log**: one heading per session, one line per event, newest last. You append after every event; workers append under their own heading. Read it instead of asking anyone. A fact that is only in a session's context does not exist.
 3. **Lanes.** One worker session per repository or environment, titled `<Feature> [<lane>]`. Start each with `start_session` (`user_asked`, `fresh`, `use_worktree` as the lane needs) and the brief below as `prompt`. Record each lane's title and `local_…` id in the state file. Address workers by `local_…` id: an idle session is not listed by name, so a send by title fails exactly when the worker needs waking.
 4. **Gates between lanes.** When a lane depends on another (a route must be deployed, a branch must land), write the gate in the state file as what must be true and how you verify it. Tell the dependent worker "hold until I tell you", and tell it again, with the fact, when the gate clears.
 
@@ -34,7 +36,7 @@ You never edit a document. When code and a document disagree, send the orchestra
 A gap in a design is a question to the orchestrator, never a filled-in value. No name of a person, host, machine or build agent anywhere.
 Review-then-fix loops run at most two rounds; after round two push what is verified and report. Round three needs the orchestrator.
 A turn never ends with a run, build or command in flight: start anything longer than a minute with run_in_background or a Monitor on its log, and close the turn with the report. A command that triggers a guard or permission prompt is abandoned, not waited on: report "blocked on <command>" and continue with what does not depend on it.
-Commit per verified step. One branch per slice, one slice per PR; dependent slices stack. Worktrees and state live under ~/.local/state, never in a scratchpad. Never create a PR, merge, amend, rebase a pushed branch or force push unless the orchestrator says so in words.
+Commit per verified step. One branch per slice, one slice per PR; dependent slices stack. Worktrees and notes live under ~/.local/state/<feature>/<lane>/, never in a scratchpad: your session can die at any moment, and whatever is not committed or in the state file is lost. If you are resuming, read your heading in the state file and your worktree before touching anything, and report state first. Never create a PR, merge, amend, rebase a pushed branch or force push unless the orchestrator says so in words.
 Questions go to the orchestrator, never to the user. Report in exactly five lines:
 state: working|blocked|done
 head: <hash, as git ls-remote shows it>
@@ -78,8 +80,18 @@ Anything longer goes under your heading in docs/local/<feature>-state.md, one li
 - "Status?" means ask the workers now, verify, then answer. Never report from memory.
 - Decided items stay decided. A hook deny or classifier refusal means: state the blocker, give the one command, continue with the rest.
 
-## Compaction and resume
+## Crash, reboot, resume
 
-- A compact prompt for any session, yours included, is a fixed role header (this role, the lanes with titles and ids, the hard rules) plus the current task plus the tail of the state file. Save it as `docs/local/compact-prompt-<feature>-<lane>-<date>.txt`. It is stale after one day: regenerate it at every compaction, not only when the user asks.
-- After compaction or a restart, read the state file and `list_events` of every lane before sending anything.
-- When the user asks for a loop: self-paced, woken by worker messages, fallback wake every 1800 s, stopped only when a step needs the user.
+Any session, yours included, can die at any moment: app crash, usage limit, reboot. Work so that it does not matter.
+
+- **Write before you act.** The snapshot is updated before a hand-off is sent and after every report is verified, never "later". The log line for an event is written in the same turn as the event.
+- **Workers persist the same way.** The brief puts their worktrees and notes under `~/.local/state/<feature>/<lane>/`, commits per verified step, and appends to the state file; a dead worker loses at most its current step.
+- **Compact prompts are the restart briefs.** For every session, yours included, keep `docs/local/compact-prompt-<feature>-<lane>.txt` current: a fixed role header (this role or the worker block above, the lanes with titles and ids, the hard rules) plus the current task plus the snapshot. Rewrite it whenever the snapshot changes a lane's task; it is the `prompt` that restarts that lane.
+- **Resume procedure** (a new orchestrator session, or this one after compaction or a restart):
+  1. Read the snapshot, then `list_events` for every lane id in it, before sending anything.
+  2. Verify every snapshot fact with a tool: `git ls-remote` for heads, `gh pr view` and `gh pr checks` for PRs, `get_session` for whether each lane session still exists and is running. Correct the snapshot, log one "resumed" line with the differences.
+  3. A lane whose session is gone is restarted with `start_session` and its compact prompt, plus the line "you are resuming <lane>: read your heading in the state file and your worktree first, report state before touching anything". Record the new id; the old one stays in the log.
+  4. A lane whose session exists but is idle without a report is re-prompted with the current task from the snapshot.
+  5. Only then tell the user, in one sentence, what resumed and what was lost.
+- **Never rely on memory of this conversation** for a hash, a decision or a worker's state; the state file is the record, the conversation is a cache.
+- When the user asks for a loop: self-paced, woken by worker messages, fallback wake every 1800 s, stopped only when a step needs the user. The loop itself is not durable; the snapshot is what lets it restart.
