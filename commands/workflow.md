@@ -23,10 +23,11 @@ The CLI is `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs"`.
 6. Show the plan, one line per piece, and nothing else: `<n>. <piece> → <self | haiku/low | sonnet/medium | opus/high | skynet write | skynet read>`.
 7. Start all independent pieces in one message.
    - Claude subagent: a brief with goal, paths, constraints, done-when; set `model` and `effort`.
-   - External worker: Bash tool, `run_in_background: true`, brief on stdin with a quoted heredoc. Add `--parallel` to every writer when more than one writer runs at the same time.
+   - External worker: start each one without waiting, brief on stdin with a quoted heredoc. Each start prints `<job-id> → <backend> (...)`. Add `--parallel` to every writer when more than one writer runs at the same time.
      ```
-     <cli> delegate --mode <write|read> [--paths a,b] [--parallel] --wait <<'BRIEF'
+     <cli> delegate --mode <write|read> [--paths a,b] [--parallel] <<'BRIEF'
      <brief of at most 15 lines>
      BRIEF
      ```
+     Then one Bash call, `run_in_background: true`, for all of them: `<cli> wait <id> <id> ... --any --timeout-s 3000`. It prints each finished job's output and status line and returns at the first finish; exit 3 means others still run, so run it again for the ids left. `<cli> status` shows every job's mode, title, branch and merge state.
 8. Check every result before you use it: read the diff of each write job, test the claims of each read. Send back or redo what fails; never keep a diff you have not read. Report one line per piece.

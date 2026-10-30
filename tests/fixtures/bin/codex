@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Fake codex exec: FAKE_MODE=ok writes the prompt echo to -o, fail exits 3, sleep hangs.
-// FAKE_EDIT=1 also writes edited.txt into the -C directory.
+// FAKE_EDIT=1 also writes edited.txt into the -C directory. FAKE_DELAY_MS waits before doing either.
 import fs from "node:fs";
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
@@ -13,8 +13,10 @@ if (mode === "sleep") {
   setTimeout(() => {}, 60_000);
 } else {
   const prompt = fs.readFileSync(0, "utf8");
-  fs.writeFileSync(out, `fake codex: ${prompt.split("\n")[0]}${process.env.FAKE_NO_NEWLINE ? "" : "\n"}`);
-  if (process.env.FAKE_EDIT) {
-    fs.writeFileSync(`${args[args.indexOf("-C") + 1]}/edited.txt`, "worker\n");
-  }
+  setTimeout(() => {
+    fs.writeFileSync(out, `fake codex: ${prompt.split("\n")[0]}${process.env.FAKE_NO_NEWLINE ? "" : "\n"}`);
+    if (process.env.FAKE_EDIT) {
+      fs.writeFileSync(`${args[args.indexOf("-C") + 1]}/edited.txt`, "worker\n");
+    }
+  }, Number(process.env.FAKE_DELAY_MS ?? 0));
 }

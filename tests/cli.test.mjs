@@ -32,8 +32,12 @@ function setup(extraEnv = {}) {
     const r = spawnSync(process.execPath, [cli, ...args], { cwd: repo, env, encoding: "utf8" });
     return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
   };
+  const runWith = (extra, ...args) => {
+    const r = spawnSync(process.execPath, [cli, ...args], { cwd: repo, env: { ...env, ...extra }, encoding: "utf8" });
+    return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
+  };
   const start = (...args) => spawn(process.execPath, [cli, ...args], { cwd: repo, env, stdio: ["ignore", "pipe", "pipe"] });
-  return { repo, env, run, start };
+  return { repo, env, run, runWith, start };
 }
 
 async function waitFor(run, id, statuses) {
@@ -60,7 +64,7 @@ test("delegate runs a job to completion", async () => {
 test("result keeps output and status on separate lines", async () => {
   const { run } = setup({ FAKE_NO_NEWLINE: "1" });
   const r = run("delegate", "--backend", "codex", "--mode", "read", "--wait", "--", "nl");
-  assert.match(r.out, /fake codex: nl\ndlg-\S+ codex completed/);
+  assert.match(r.out, /fake codex: nl\ndlg-\S+ codex read completed/);
 });
 
 test("write briefs tell the worker not to commit", () => {
@@ -263,4 +267,72 @@ test("a rate-limited job without a different fallback fails", () => {
   const r = run("delegate", "--backend", "openrouter", "--mode", "read", "--wait", "--", "x");
   assert.equal(r.code, 1);
   assert.match(r.out, /429 rate limited/);
+});
+
+const idOf = (r) => r.out.split(" ")[0];
+const gitIn = (repo, ...a) => execFileSync("git", a, { cwd: repo, encoding: "utf8" });
+
+test("status shows mode and the brief's first line as title", async () => {
+  const { run } = setup();
+  const id = idOf(run("delegate", "--backend", "codex", "--mode", "read", "--", "Find the bug\nmore detail"));
+  run("wait", id, "--timeout-s", "10");
+  assert.match(run("status", id).out, new RegExp(`^${id} codex read completed .*"Find the bug"`));
+});
+
+test("a main-tree write job shows merge=none and no branch", () => {
+  const { run } = setup();
+  const r = run("delegate", "--backend", "codex", "--mode", "write", "--wait", "--", "edit");
+  const line = run("status", idOf(r)).out;
+  assert.match(line, / codex write completed .*merge=none/);
+  assert.doesNotMatch(line, /branch=/);
+});
+
+test("a parallel write job shows its branch and merge state", async () => {
+  const { run } = setup({ FAKE_EDIT: "1", FAKE_DELAY_MS: "1500" });
+  const id = idOf(run("delegate", "--backend", "codex", "--mode", "write", "--parallel", "--", "edit"));
+  assert.match(run("status", id).out, / write (queued|running) .*branch=feat\/x--codex merge=pending/);
+  run("wait", id, "--timeout-s", "15");
+  assert.match(run("status", id).out, / write completed .*branch=feat\/x--codex merge=merged/);
+});
+
+test("a parallel write that conflicts shows merge=conflict", () => {
+  const { repo, run } = setup({ FAKE_EDIT: "1", FAKE_DELAY_MS: "1500" });
+  const id = idOf(run("delegate", "--backend", "codex", "--mode", "write", "--parallel", "--", "edit"));
+  fs.writeFileSync(path.join(repo, "edited.txt"), "lead\n");
+  gitIn(repo, "add", "edited.txt");
+  gitIn(repo, "commit", "-q", "-m", "lead");
+  run("wait", id, "--timeout-s", "15");
+  assert.match(run("status", id).out, /branch=feat\/x--codex merge=conflict/);
+});
+
+test("one wait returns every job as it ends, failing one included", () => {
+  const { run, runWith } = setup();
+  const a = idOf(run("delegate", "--backend", "codex", "--mode", "read", "--", "job a"));
+  const b = idOf(runWith({ FAKE_MODE: "fail" }, "delegate", "--backend", "codex", "--mode", "read", "--", "job b"));
+  const c = idOf(runWith({ FAKE_DELAY_MS: "800" }, "delegate", "--backend", "codex", "--mode", "read", "--", "job c"));
+  const r = run("wait", a, b, c, "--timeout-s", "15");
+  assert.equal(r.code, 1, r.err);
+  assert.match(r.out, /fake codex: job a/, `stderr: ${r.err}`);
+  assert.match(r.out, /fake codex: job c/);
+  assert.match(r.out, new RegExp(`${b} codex read failed .*boom`));
+  assert.equal(r.out.split("\n").filter((l) => l.startsWith("dlg-")).length, 3);
+  assert.ok(r.out.indexOf(c) > r.out.indexOf(a), "the slow job is reported after the fast one");
+});
+
+test("wait --any returns at the first finished job and exit 3 while others run", () => {
+  const { run, runWith } = setup();
+  const fast = idOf(run("delegate", "--backend", "codex", "--mode", "read", "--", "fast"));
+  const slow = idOf(runWith({ FAKE_MODE: "sleep" }, "delegate", "--backend", "codex", "--mode", "read", "--", "slow"));
+  const r = run("wait", fast, slow, "--any", "--timeout-s", "15");
+  assert.equal(r.code, 3);
+  assert.match(r.out, new RegExp(`${fast} codex read completed`));
+  assert.match(r.out, new RegExp(`${slow} codex read (queued|running)`));
+  run("cancel", slow);
+});
+
+test("wait over all-completed jobs exits 0", () => {
+  const { run } = setup();
+  const a = idOf(run("delegate", "--backend", "codex", "--mode", "read", "--", "a"));
+  const b = idOf(run("delegate", "--backend", "codex", "--mode", "read", "--", "b"));
+  assert.equal(run("wait", a, b, "--timeout-s", "15").code, 0);
 });

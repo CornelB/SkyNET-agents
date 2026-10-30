@@ -259,16 +259,21 @@ async function worker(id, workspaceRoot = process.cwd()) {
       summary = `${summary}, worktree kept at ${job.tree.path}`;
     }
     if (!cancelled && code === 0 && job.tree) {
-      summary = finishWorkerTree({ repo: workspaceRoot, backend: job.backend, ...job.tree }).line;
+      const finished = finishWorkerTree({ repo: workspaceRoot, backend: job.backend, ...job.tree });
+      summary = finished.line;
+      patchJob(workspaceRoot, id, { merge: finished.state });
     }
     return { exitStatus: code, summary, rendered: null, payload: null };
   }, { logFile: job.logFile });
   return 0;
 }
 
+// Write jobs carry their branch and merge state: merged, conflict, pending (not merged yet, or kept), none (main tree).
 function statusLine(job) {
   const elapsed = formatElapsedDuration(job.startedAt ?? job.createdAt, job.completedAt ?? null);
-  return [job.id, job.backend, job.status, elapsed, job.summary ?? job.errorMessage].filter(Boolean).join(" ");
+  const merge = job.mode !== "write" ? null : job.tree ? `branch=${job.tree.branch} merge=${job.merge ?? "pending"}` : "merge=none";
+  const title = job.title ? `"${job.title}"` : null;
+  return [job.id, job.backend, job.mode, job.status, elapsed, merge, title, job.summary ?? job.errorMessage].filter(Boolean).join(" ");
 }
 
 function status(options, positionals) {
@@ -286,12 +291,7 @@ function status(options, positionals) {
 }
 
 function result(positionals) {
-  const { job } = resolveResultJob(process.cwd(), positionals[0]);
-  const output = fs.existsSync(job.outFile ?? "") ? fs.readFileSync(job.outFile, "utf8") : "";
-  if (output) {
-    process.stdout.write(output.endsWith("\n") ? output : `${output}\n`);
-  }
-  print(statusLine(job));
+  printResult(resolveResultJob(process.cwd(), positionals[0]).job);
   return 0;
 }
 
@@ -311,32 +311,50 @@ function cancel(positionals) {
   return 0;
 }
 
-async function waitFor(options, positionals) {
-  const workspaceRoot = resolveWorkspaceRoot(process.cwd());
-  const { job: found } = buildSingle(workspaceRoot, positionals[0]);
-  const deadline = Date.now() + Number(options["timeout-s"] ?? 540) * 1000;
-  let job = settle(workspaceRoot, readStoredJob(workspaceRoot, found.id) ?? found);
-  while (ACTIVE.has(job.status) && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 200));
-    job = settle(workspaceRoot, readStoredJob(workspaceRoot, found.id) ?? job);
+function printResult(job) {
+  const output = fs.existsSync(job.outFile ?? "") ? fs.readFileSync(job.outFile, "utf8") : "";
+  if (output) {
+    process.stdout.write(output.endsWith("\n") ? output : `${output}\n`);
   }
   print(statusLine(job));
-  return ACTIVE.has(job.status) ? 3 : job.status === "completed" ? 0 : 1;
 }
 
-function buildSingle(workspaceRoot, reference) {
-  if (!reference) {
-    throw new UsageError("wait needs a job id");
+// Waits for one or more jobs and prints each one's output and status line as it ends.
+// --any returns after the first ends. Exit 0 all completed, 1 any failed or cancelled, 3 any still running.
+async function waitFor(options, positionals) {
+  if (!positionals.length) {
+    throw new UsageError("wait needs one or more job ids");
   }
-  const { jobs } = buildStatusSnapshot(workspaceRoot, { reference });
-  return { job: jobs[0] };
+  const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+  const ids = positionals.map((reference) => buildStatusSnapshot(workspaceRoot, { reference }).jobs[0].id);
+  const deadline = Date.now() + Number(options["timeout-s"] ?? 540) * 1000;
+  // The state list, not the job file, carries summary and merge state.
+  const load = (id) => settle(workspaceRoot, buildStatusSnapshot(workspaceRoot, { reference: id }).jobs[0]);
+  const pending = new Set(ids);
+  const ended = [];
+  for (;;) {
+    for (const id of pending) {
+      const job = load(id);
+      if (!ACTIVE.has(job.status)) {
+        printResult(job);
+        pending.delete(id);
+        ended.push(job);
+      }
+    }
+    if (!pending.size || (options.any && ended.length) || Date.now() >= deadline) {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  pending.forEach((id) => print(statusLine(load(id))));
+  return pending.size ? 3 : ended.every((job) => job.status === "completed") ? 0 : 1;
 }
 
 async function main(argv) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArgs(rest, {
     valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "openrouter-reasoning-model", "openrouter-coding-model", "openrouter-decision-model", "openrouter-fallback-model", "agy-window", "timeout-s"],
-    booleanOptions: ["parallel", "wait", "json", "all"]
+    booleanOptions: ["parallel", "wait", "json", "all", "any"]
   });
   switch (command) {
     case "setup": return setup(options);

@@ -15,6 +15,5 @@ You forward one brief to the skynet CLI. You do not do the task yourself, read f
    BRIEF
    ```
    It prints `<job-id> → <backend> (...)`, or `no backend: ...`. On `no backend:`, return that line only and stop.
-3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" wait <job-id> --timeout-s 540` with a 600000 ms Bash timeout. Exit 3 means still running: run the same command again. Repeat until the exit is not 3.
-4. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" result <job-id>`.
-5. Return the first line from step 2 and the output of step 4, verbatim.
+3. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs" wait <job-id> --timeout-s 540` with a 600000 ms Bash timeout. Exit 3 means still running: run the same command again. Repeat until the exit is not 3. The last run prints the job's output and status line.
+4. Return the first line from step 2 and the output of the last wait, verbatim.
