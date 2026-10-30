@@ -23,6 +23,7 @@ Then run `/skynet:setup`.
 |---------|------|
 | `/skynet:setup` | Detect backends, save which may be used and how each is paid. |
 | `/skynet:workflow <task>` | Plan a fan-out: each piece goes to you, a Claude subagent (model and effort set) or an external worker. |
+| `/skynet:orchestrate <feature>` | Make this session the orchestrator of a feature built by worker sessions, one lane per repository: scope gate, worker briefs, five-line reports, state file. |
 | `/skynet:delegate <task>` | Route, brief and start one or more jobs. |
 | `/skynet:status [job]` | One line per job: backend, mode, status, branch and merge state for write jobs, title. A running job whose worker died shows as failed. |
 | `/skynet:result [job]` | Show a finished job's output. |
