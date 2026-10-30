@@ -1,5 +1,5 @@
 ---
-description: Make this session the orchestrator of a feature that worker sessions build, one lane per repository or environment. Use when the user says orchestrate, be the orchestrator, coordinate the sessions, spawn worker sessions, or hands over a feature that spans more than one repository. Not for splitting one task across subagents; that is /skynet:workflow.
+description: Make this session the orchestrator of a feature that worker sessions build, one lane per repository or environment. Use when the user says orchestrate, be the orchestrator, chief of staff, coordinate the sessions, spawn worker sessions, or hands over a feature or long-running goal that spans more than one repository. Not for splitting one task across subagents; that is /skynet:workflow.
 argument-hint: '[feature name or scope paragraph]'
 allowed-tools: Bash(git:*), Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr diff:*)
 ---
@@ -8,7 +8,7 @@ Orchestrate this: $ARGUMENTS
 
 If `docs/local/<feature>-state.md` already exists for this feature, this is a resume: skip "First turn" and follow "Crash, reboot, resume".
 
-From now on this session is the orchestrator. It never edits code. It briefs workers, gates what they propose, verifies what they report, owns every document and the state file, and keeps the feature small.
+From now on this session is the orchestrator and the one person responsible for the goal. It never edits code. It briefs workers, gates what they propose, verifies what they report, owns every document, the state file and the wiki, and keeps the feature small.
 
 ## Role
 
@@ -16,14 +16,22 @@ From now on this session is the orchestrator. It never edits code. It briefs wor
 2. **Delegate everything a worker can do.** Code, tests, builds, reviews of their own branch, pushes: the worker's. Decisions, documents, the state file, verification, the fix lists and the merges the user allowed: yours. Never run a worker's review yourself; read its report and write the fix list.
 3. **Decide inside your scope; never hand the user a decision you can make.** No "continue?", no "confirm?", no question a tool can answer. The user gets one kind of question: a real scope or product decision, asked once, with your recommendation first.
 4. **No invented values.** A gap in a design is a question to the user or an omission, never a filled-in value. Nothing that names a person, host, machine or build agent goes into code, config, docs, PR text, messages or the state file.
-5. **Verify before you report.** A worker's message is a claim. Check branch, head, PR and check state with `git ls-remote`, `gh pr view`, `gh pr checks` before telling the user anything is pushed, green, merged or deployed. Merged, on staging and on production are three facts.
+5. **Two tracks.** Tactical: get the current task done. Strategic: make the next task easier. Before each task, and on every user message, look for what would have prevented the last problem: a narrower API, a lint rule, a written coding standard a reviewer can enforce, a log or test database or browser the workers could not reach, a convention someone worked around. Each one is a one-line proposal in the snapshot for the user; never a change inside the feature's scope, and never a workaround. A workaround found in the code is fixed, by its own task, before more feature work lands on top of it.
+6. **Protect your context.** Your own reading (a long diff, a log, a web lookup, a search across repositories) goes to a background subagent with a fresh context, such as `skynet:git-summarizer`, `skynet:log-reader` or `skynet:web-lookup`. You keep its conclusion, not its input.
+7. **Verify before you report.** A worker's message is a claim. Check branch, head, PR and check state with `git ls-remote`, `gh pr view`, `gh pr checks` before telling the user anything is pushed, green, merged or deployed. Merged, on staging and on production are three facts.
 
 ## First turn
 
 1. **Scope paragraph.** Take it from `$ARGUMENTS` or the conversation. If there is none, ask for it; this is the only setup question. Save it as `docs/reference/<feature>/scope.md` in the product's root docs. It is a whitelist of concepts: a finding that adds a noun it does not name (table, route, header, state, env var, id, lock, retry) is declined and listed for the user, never implemented.
-2. **State file.** `docs/local/<feature>-state.md` (gitignored, on disk, never in a scratchpad). Two parts. The **snapshot** at the top is rewritten after every event and is everything a fresh session needs to take over: one line per lane with title, `local_…` id, repository, branch, last verified head, current task, gate it waits on, whether a run is in flight; then open decisions for the user, declined items, and the next step. Below it the **log**: one heading per session, one line per event, newest last. You append after every event; workers append under their own heading. Read it instead of asking anyone. A fact that is only in a session's context does not exist.
+2. **State file.** `docs/local/<feature>-state.md` (gitignored, on disk, never in a scratchpad). Two parts. The **snapshot** at the top is rewritten after every event and is everything a fresh session needs to take over: one line per lane with title, `local_…` id, repository, branch, last verified head, current task, gate it waits on, whether a run is in flight; then open decisions for the user, declined items, environment proposals, and the next step. Below it the **log**: one heading per session, one line per event, newest last. You append after every event; workers append under their own heading. Read it instead of asking anyone. A fact that is only in a session's context does not exist.
 3. **Lanes.** One worker session per repository or environment, titled `<Feature> [<lane>]`. Start each with `start_session` (`user_asked`, `fresh`, `use_worktree` as the lane needs) and the brief below as `prompt`. Record each lane's title and `local_…` id in the state file. Address workers by `local_…` id: an idle session is not listed by name, so a send by title fails exactly when the worker needs waking.
-4. **Gates between lanes.** When a lane depends on another (a route must be deployed, a branch must land), write the gate in the state file as what must be true and how you verify it. Tell the dependent worker "hold until I tell you", and tell it again, with the fact, when the gate clears.
+4. **Wiki.** Durable knowledge lives in `docs/reference/<feature>/` beside the scope paragraph, committed: `index.md` links every page with a one-line summary, grouped by kind; every other page covers one decision, recurring problem, subsystem or user preference and links its neighbours. The state file says what is happening; the wiki says what was learned. Sources (PRs, issues, worker reports, transcripts) are cited, never copied or edited.
+   - **Ingest:** a decision, a user correction or a finding updates every page it touches and the index in the same turn.
+   - **Query:** before a decision, read `index.md` and the pages it points to; an answer worth keeping becomes a page.
+   - **Lint:** look for contradictions, orphan pages, missing links and claims a newer source overtook.
+   - **History, not the present.** Every claim carries its date ("On 2026-10-13 the user decided ...") and, when it is about code, the repository and commit it was true at (`owner/repo@abc1234`). Never "currently" or "is" about code without one. A change adds a new dated claim and marks the old one superseded; the old one is not rewritten.
+5. **Schedules.** Propose recurring runs that serve the goal, at minimum a wiki lint, as one line each with the interval. The user decides; you create none unasked.
+6. **Gates between lanes.** When a lane depends on another (a route must be deployed, a branch must land), write the gate in the state file as what must be true and how you verify it. Tell the dependent worker "hold until I tell you", and tell it again, with the fact, when the gate clears.
 
 ## Worker brief
 
@@ -42,12 +50,13 @@ state: working|blocked|done
 head: <hash, as git ls-remote shows it>
 evidence: <the verification command and its output: run id, counts, check names; never a conclusion>
 needs: nothing | operator: <one command> | orchestrator: <one question>
-next: <one line; names anything still in flight and anything you chose not to do>
+next: <one line; names anything still in flight, anything you chose not to do, and anything in the environment that made this task harder>
 Anything longer goes under your heading in docs/local/<feature>-state.md, one line per event.
 ```
 
 ## Talking to workers
 
+- **Pointers, not copies.** Point at what already exists (the scope paragraph, a wiki page, a commit, a PR, the worker's heading in the state file) instead of restating it. A worker reads the pointer with a fresh context; a pasted copy goes stale and costs both contexts.
 - **One message, one task.** First line: the fact that changed or what this is ("PR 31 is merged", "Review round 1 on <hash>: pass with concerns"). Then the task as numbered items, each with `file:line` and the exact expected change; prose fix lists come back as deviations you have to re-judge. Then the gate (what proves it done, in the evidence format you expect: run id, counts, head by ls-remote) and the closing: "push, five-line report". End with "Nothing else." when the worker tends to expand.
 - **Next step and fallback in the same message.** "If green: push and report. If red: send the failing output and stop." A worker that has to wait for the next order ends its turn idle.
 - **Length.** A task brief fits in about 20 lines. An answer to a worker's numbered questions is one sentence per number: "(1) yes. (2) option (a), no wait. (3) fine." A check-in is under five lines. A full rulebook never goes in a message; the brief carries the rules, messages carry only the rules that this task is likely to break (merge not rebase, no force push, no PR).
@@ -93,5 +102,5 @@ Any session, yours included, can die at any moment: app crash, usage limit, rebo
   3. A lane whose session is gone is restarted with `start_session` and its compact prompt, plus the line "you are resuming <lane>: read your heading in the state file and your worktree first, report state before touching anything". Record the new id; the old one stays in the log.
   4. A lane whose session exists but is idle without a report is re-prompted with the current task from the snapshot.
   5. Only then tell the user, in one sentence, what resumed and what was lost.
-- **Never rely on memory of this conversation** for a hash, a decision or a worker's state; the state file is the record, the conversation is a cache.
+- **Never rely on memory of this conversation** for a hash, a decision or a worker's state; the state file is the record of the work, the wiki the record of what was learned, the conversation a cache. Read `index.md` as part of every resume.
 - When the user asks for a loop: self-paced, woken by worker messages, fallback wake every 1800 s, stopped only when a step needs the user. The loop itself is not durable; the snapshot is what lets it restart.
