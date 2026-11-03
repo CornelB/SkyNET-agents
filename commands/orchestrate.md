@@ -1,6 +1,6 @@
 ---
-description: Make this session the orchestrator of a feature that worker sessions build, one lane per repository or environment. Use when the user says orchestrate, be the orchestrator, chief of staff, coordinate the sessions, spawn worker sessions, or hands over a feature or long-running goal that spans more than one repository. Not for splitting one task across subagents; that is /skynet:workflow.
-argument-hint: '[feature name or scope paragraph]'
+description: '[Orchestrate] multiple sessions; make this session the orchestrator of a feature that worker sessions build, one lane per repository or environment. Use when the user says orchestrate, be the orchestrator, chief of staff, coordinate the sessions, spawn worker sessions, or hands over a feature or long-running goal that spans more than one repository. Not for splitting one task across subagents; that is /skynet:workflow.'
+argument-hint: '[feature-name] to orchestrate'
 allowed-tools: Bash(git:*), Bash(gh pr view:*), Bash(gh pr checks:*), Bash(gh pr diff:*)
 ---
 

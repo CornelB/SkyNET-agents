@@ -1,6 +1,6 @@
 ---
-description: Plan and run delegated work. Split a task into bounded pieces and give each to yourself, a Claude subagent with model and effort set, or a Codex, Antigravity, OpenRouter or Ollama worker picked by live usage. Use it first, before any other command, whenever the user says fan out, use agents or subagents, spawn agents or workers, orchestrate, split or distribute the workload, run in parallel, or names Haiku, Sonnet, Opus, Fable or Codex for parts of a task. Also for task delegation, research that would flood the context, or saving Claude usage.
-argument-hint: '[task]'
+description: '[Workflow] Split workload to multiple sub-agents; plan and run delegated work: split a task into bounded pieces and give each to yourself, a Claude subagent with model and effort set, or a Codex, Antigravity, OpenRouter or Ollama worker picked by live usage. Use it first, before any other command, whenever the user says fan out, use agents or subagents, spawn agents or workers, orchestrate, split or distribute the workload, run in parallel, or names Haiku, Sonnet, Opus, Fable or Codex for parts of a task. Also for task delegation, research that would flood the context, or saving Claude usage.'
+argument-hint: '[task] to split and delegate'
 allowed-tools: Bash(node:*), Bash(git:*), Bash(python3:*)
 ---
 

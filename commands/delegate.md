@@ -1,6 +1,6 @@
 ---
-description: Delegate work to Codex, Antigravity, OpenRouter or local Ollama, picked by live usage. Use to hand off or offload a self-contained piece to an external worker, or when told to delegate to Codex, agy or Ollama to save Claude usage. To split work across several agents or Claude subagents, use /skynet:workflow.
-argument-hint: '[what to delegate]'
+description: '[Delegate] a task; hand it to Codex, Antigravity, OpenRouter or local Ollama, picked by live usage. Use to hand off or offload a self-contained piece to an external worker, or when told to delegate to Codex, agy or Ollama to save Claude usage. To split work across several agents or Claude subagents, use /skynet:workflow.'
+argument-hint: '[task] to delegate'
 allowed-tools: Bash(node:*), Bash(git:*)
 ---
 
