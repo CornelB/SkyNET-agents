@@ -22,7 +22,9 @@ export function buildInvocation(backend, { mode, cwd, promptFile, outFile, promp
       if (!ossHome) {
         throw new Error("ollama needs ossHome");
       }
-      args.push("--oss", "--local-provider", "ollama", "-m", model);
+      // model_provider=ollama: --oss alone leaves the turn on the openai provider, and codex 0.166
+      // refuses it with modelProviderMismatch, even in an empty CODEX_HOME.
+      args.push("--oss", "--local-provider", "ollama", "-c", "model_provider=ollama", "-m", model);
       return { cmd: "codex", args: [...args, "-"], stdinFile: promptFile, env: { CODEX_HOME: ossHome } };
     }
     return { cmd: "codex", args: [...args, "-"], stdinFile: promptFile };

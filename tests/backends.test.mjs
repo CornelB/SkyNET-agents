@@ -20,7 +20,7 @@ test("codex read", () => {
 test("ollama runs through codex --oss", () => {
   assert.deepEqual(buildInvocation("ollama", { ...io, mode: "write", model: "qwen3.6:35b-a3b-coding-mtp-q4_K_M", ossHome: "/data/oss" }), {
     cmd: "codex",
-    args: ["exec", "--skip-git-repo-check", "-C", "/repo", "-s", "workspace-write", "-o", "/jobs/out.md", "--oss", "--local-provider", "ollama", "-m", "qwen3.6:35b-a3b-coding-mtp-q4_K_M", "-"],
+    args: ["exec", "--skip-git-repo-check", "-C", "/repo", "-s", "workspace-write", "-o", "/jobs/out.md", "--oss", "--local-provider", "ollama", "-c", "model_provider=ollama", "-m", "qwen3.6:35b-a3b-coding-mtp-q4_K_M", "-"],
     stdinFile: "/jobs/p.md",
     env: { CODEX_HOME: "/data/oss" }
   });
