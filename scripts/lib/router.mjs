@@ -1,5 +1,7 @@
 // Picks a delegation backend from codexbar usage and the machine config.
 // Thresholds come from the usage skill (full) and the spec (near full).
+import { describeGpu, gpuIdle } from "./gpu.mjs";
+
 const FULL_5H = 90;
 const FULL_WEEK = 95;
 const FULL_MODEL = 95;
@@ -33,9 +35,14 @@ function isFull(backend, w) {
 }
 
 // -> {backend, available, tier, room, status}
-function assess(backend, usage, cfg) {
+// gpu: readGpu() output, or undefined when not read. An idle GPU puts ollama ahead of every cloud backend.
+function assess(backend, usage, cfg, gpu) {
   if (backend === "ollama") {
-    return { backend, available: true, tier: 2, room: 0, status: "ollama local" };
+    if (gpu === undefined) {
+      return { backend, available: true, tier: 2, room: 0, status: "ollama local" };
+    }
+    const idle = gpuIdle(gpu);
+    return { backend, available: true, tier: idle ? 0 : 2, room: 0, status: `ollama local, ${describeGpu(gpu)}${idle ? ", idle" : ""}` };
   }
   // OpenRouter has no plan windows. Free models share ollama's tier and win the tie by list order.
   if (backend === "openrouter") {
@@ -65,10 +72,10 @@ function assess(backend, usage, cfg) {
   return { backend, available: true, tier, room: 100 - top.used_percent, status: `${backend} ${top.name} ${Math.round(top.used_percent)}%${label}` };
 }
 
-export function route(usage, config) {
+export function route(usage, config, gpu) {
   const backends = config.backends ?? {};
   const assessed = ["codex", "agy", "openrouter", "ollama"].map((backend) =>
-    backends[backend]?.enabled ? assess(backend, usage, backends[backend]) : { backend, available: false, disabled: true, status: `${backend} disabled` }
+    backends[backend]?.enabled ? assess(backend, usage, backends[backend], gpu) : { backend, available: false, disabled: true, status: `${backend} disabled` }
   );
   const pick = assessed
     .filter((a) => a.available)
@@ -86,12 +93,15 @@ const HANDOFF = {
   all: "hand off everything but orchestration and diff review"
 };
 
-export function handoffLevel(usage) {
+// ollamaIdle: ollama is enabled and the GPU is idle. Free local compute raises "named" to "independent".
+export function handoffLevel(usage, { ollamaIdle = false } = {}) {
   const week = usage.find((e) => e.provider === "claude")?.windows?.find((w) => w.name === "week");
-  if (typeof week?.used_percent !== "number") {
-    return { level: "named", line: `claude no usage data → ${HANDOFF.named}` };
+  const used = typeof week?.used_percent === "number" ? week.used_percent : null;
+  let level = used === null ? "named" : used >= 90 ? "all" : used >= 70 ? "independent" : "named";
+  const source = used === null ? "claude no usage data" : `claude week ${Math.round(used)}%`;
+  if (ollamaIdle && level === "named") {
+    level = "independent";
+    return { level, line: `${source}, GPU idle → ${HANDOFF[level]}` };
   }
-  const used = week.used_percent;
-  const level = used >= 90 ? "all" : used >= 70 ? "independent" : "named";
-  return { level, line: `claude week ${Math.round(used)}% → ${HANDOFF[level]}` };
+  return { level, line: `${source} → ${HANDOFF[level]}` };
 }

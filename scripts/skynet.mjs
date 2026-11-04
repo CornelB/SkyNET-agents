@@ -11,6 +11,7 @@ import { buildInvocation } from "./lib/backends.mjs";
 import { configPath, detectBackends, loadConfig, saveConfig } from "./lib/config.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { buildStatusSnapshot, formatElapsedDuration, readStoredJob, resolveCancelableJob, resolveResultJob } from "./lib/job-control.mjs";
+import { gpuIdle, readGpu } from "./lib/gpu.mjs";
 import { handoffLevel, route } from "./lib/router.mjs";
 import { ensureStateDir, generateJobId, resolveJobLogFile, resolveJobsDir, resolveStateDir, upsertJob, writeJobFile } from "./lib/state.mjs";
 import { appendLogLine, createJobRecord, nowIso, runTrackedJob } from "./lib/tracked-jobs.mjs";
@@ -111,10 +112,15 @@ function setup(options) {
   return 0;
 }
 
+// The GPU is read only when ollama could take the job.
+const ollamaGpu = (config) => (config.backends.ollama?.enabled ? readGpu({ model: config.backends.ollama.model }) : undefined);
+
 async function routeCommand() {
   const usage = await readUsage();
-  print(route(usage, loadConfig()).line);
-  print(handoffLevel(usage).line);
+  const config = loadConfig();
+  const gpu = ollamaGpu(config);
+  print(route(usage, config, gpu).line);
+  print(handoffLevel(usage, { ollamaIdle: gpu !== undefined && gpuIdle(gpu) }).line);
   return 0;
 }
 
@@ -139,7 +145,7 @@ async function delegate(options, positionals) {
   let backend = options.backend;
   let reason = `→ ${backend} (override)`;
   if (!backend) {
-    const picked = route(await readUsage(), config);
+    const picked = route(await readUsage(), config, ollamaGpu(config));
     if (!picked.backend) {
       print(picked.line);
       return 1;

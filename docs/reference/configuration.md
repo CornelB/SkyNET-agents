@@ -51,4 +51,5 @@ OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for
 | Full | 5h at 90% or more; week or model window at 95% or more |
 | Near full | any counted window at 75% or more |
 | Order | subscription with room (most room first), free openrouter, ollama, subscription near full, per-token |
-| Hand-off level (Claude week) | below 70%: what was named; 70% or more: any part a worker can do alone; 90% or more: everything but orchestration and diff review |
+| GPU idle | ollama enabled and the amdgpu card with the most VRAM under 20% busy with under half its VRAM in use, or `ollama ps` lists `backends.ollama.model`. Ollama then ranks first. No amdgpu card: the order above applies. |
+| Hand-off level (Claude week) | below 70%: what was named; 70% or more: any part a worker can do alone; 90% or more: everything but orchestration and diff review. GPU idle raises "what was named" to "any part a worker can do alone". |

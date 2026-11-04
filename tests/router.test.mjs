@@ -103,6 +103,28 @@ test("subscription with room beats free openrouter", () => {
   assert.equal(route([codex(10, 6)], cfg({ agy: off, openrouter: { enabled: true, billing: "free", model: "m" } })).backend, "codex");
 });
 
+const idleGpu = { busy: 5, used: 3e9, total: 16e9, loaded: false };
+const busyGpu = { busy: 95, used: 12e9, total: 16e9, loaded: false };
+
+test("an idle GPU puts ollama ahead of a subscription with room", () => {
+  const r = route([codex(10, 6), agy(1)], cfg(), idleGpu);
+  assert.equal(r.backend, "ollama");
+  assert.match(r.line, /^→ ollama \(ollama local, GPU 5% busy, VRAM 3\.0\/16\.0 GB, idle,/);
+});
+
+test("a busy GPU leaves ollama in its usual place", () => {
+  assert.equal(route([codex(10, 6), agy(1)], cfg(), busyGpu).backend, "agy");
+  assert.equal(route([codex(80, 6), agy(80)], cfg(), busyGpu).backend, "ollama");
+  assert.equal(route([codex(10, 6)], cfg(), null).backend, "codex");
+});
+
+test("an idle GPU raises a named hand-off to independent only", () => {
+  assert.equal(handoffLevel([claude(10)], { ollamaIdle: true }).level, "independent");
+  assert.match(handoffLevel([claude(10)], { ollamaIdle: true }).line, /^claude week 10%, GPU idle → /);
+  assert.equal(handoffLevel([claude(95)], { ollamaIdle: true }).level, "all");
+  assert.equal(handoffLevel([claude(10)]).level, "named");
+});
+
 test("per-token openrouter ranks last", () => {
   const openrouter = { enabled: true, billing: "per-token", model: "m" };
   assert.equal(route([codex(80, 6)], cfg({ agy: off, ollama: off, openrouter })).backend, "codex");
