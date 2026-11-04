@@ -34,7 +34,13 @@ const OPENROUTER_MODELS = {
 };
 const RATE_LIMITED = /\b429\b|rate[ -]?limit/i;
 // OpenRouter write jobs run the coding model and read jobs the reasoning model; the other backends have one model.
-const modelFor = (cfg, mode) => (cfg?.models ? cfg.models[mode === "write" ? "coding" : "reasoning"] : cfg?.model);
+// Ollama takes OLLAMA_CODING_MODEL from the environment (Claude Code settings env) over the saved model.
+const ollamaModel = (config) => process.env.OLLAMA_CODING_MODEL || config.backends.ollama?.model;
+const modelFor = (config, backend, mode) => {
+  const cfg = config.backends[backend];
+  if (backend === "ollama") return ollamaModel(config);
+  return cfg?.models ? cfg.models[mode === "write" ? "coding" : "reasoning"] : cfg?.model;
+};
 const DEFAULT_TIMEOUT_S = 3600;
 const ACTIVE = new Set(["queued", "running"]);
 
@@ -113,7 +119,7 @@ function setup(options) {
 }
 
 // The GPU is read only when ollama could take the job.
-const ollamaGpu = (config) => (config.backends.ollama?.enabled ? readGpu({ model: config.backends.ollama.model }) : undefined);
+const ollamaGpu = (config) => (config.backends.ollama?.enabled ? readGpu({ model: ollamaModel(config) }) : undefined);
 
 async function routeCommand() {
   const usage = await readUsage();
@@ -164,7 +170,7 @@ async function delegate(options, positionals) {
   const outFile = path.join(jobsDir, `${id}.out.md`);
   const prompt = composePrompt(brief, { mode: options.mode, paths: list(options.paths) });
   // Fail before creating anything when the invocation cannot be built (e.g. no ollama or openrouter model).
-  buildInvocation(backend, { mode: options.mode, cwd: workspaceRoot, promptFile, outFile, prompt, model: modelFor(config.backends[backend], options.mode), ossHome: ossHome() });
+  buildInvocation(backend, { mode: options.mode, cwd: workspaceRoot, promptFile, outFile, prompt, model: modelFor(config, backend, options.mode), ossHome: ossHome() });
   const timeoutS = Number(options["timeout-s"] ?? (config.timeoutMinutes ? config.timeoutMinutes * 60 : DEFAULT_TIMEOUT_S));
   if (!(timeoutS > 0)) {
     throw new UsageError("--timeout-s must be a positive number");
@@ -184,7 +190,7 @@ async function delegate(options, positionals) {
     cwd: tree?.path ?? workspaceRoot,
     promptFile,
     outFile,
-    model: modelFor(config.backends[backend], options.mode) ?? null,
+    model: modelFor(config, backend, options.mode) ?? null,
     fallbackModel: config.backends[backend]?.models?.fallback ?? null,
     timeoutS,
     tree,

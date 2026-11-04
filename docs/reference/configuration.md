@@ -42,6 +42,7 @@ OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for
 |----------|---------|
 | `CLAUDE_PLUGIN_DATA` | Job state root. Default: `<tmpdir>/skynet`. |
 | `CLAUDE_SCRATCHPAD` | Where `--parallel` worktrees go. Default: the system temp dir. |
+| `OLLAMA_CODING_MODEL` | Ollama model for jobs and the GPU-idle `ollama ps` check. Wins over `backends.ollama.model`. Set it in the `env` block of Claude Code `settings.json`. |
 | `SKYNET_SESSION_ID` | When set, `status`, `result` and `cancel` without a job id see only this session's jobs. |
 
 ## Routing

@@ -28,7 +28,8 @@ function setup(extraEnv = {}) {
     ...extraEnv
   };
   delete env.SKYNET_SESSION_ID;
-  const run = (...args) => {
+  delete env.OLLAMA_CODING_MODEL;
+  const run =(...args) => {
     const r = spawnSync(process.execPath, [cli, ...args], { cwd: repo, env, encoding: "utf8" });
     return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
   };
