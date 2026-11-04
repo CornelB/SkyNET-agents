@@ -33,6 +33,8 @@ Backend names: `codex`, `agy`, `openrouter`, `ollama`.
 
 Ollama jobs run codex with its own empty `CODEX_HOME` (`<job state root>/codex-oss-home`), so the user's codex config, MCP servers, skills and `AGENTS.md` do not reach the local model.
 
+agy jobs run `agy --sandbox --settings <file>`. The file is this plugin's own: `scripts/agy-settings-read.json` for read jobs, `scripts/agy-settings-write.json` for write jobs. It replaces the permissions in `~/.gemini/antigravity-cli/settings.json` for that run only; model and project still come from that file, which skynet never writes. Read jobs may only read files; writes, shell, URL reads, MCP and leaving the sandbox are denied. Write jobs may read, write and run shell commands with `--mode accept-edits`; URL reads and MCP are denied, and a request to leave the sandbox ends the job (a `deny` rule for `unsandboxed` would also deny every sandboxed shell command). The sandbox shell is read-only and has no network, so builds, installs and tests that write files fail: give those jobs to codex. agy's `search_web` tool cannot be turned off.
+
 OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for write and `--agent plan` for read. `opencode` reads `OPENROUTER_API_KEY` from the environment. Each job sets `OPENCODE_CONFIG_CONTENT` to deny reads of `.env` files, paths outside the job's tree and questions. Free OpenRouter endpoints can log prompts, so the brief and the files the model reads leave the machine. opencode has no sandbox: a write job runs shell commands as the user. A write job's fallback retry starts from the tree the first attempt left, partial edits included.
 
 ## Environment

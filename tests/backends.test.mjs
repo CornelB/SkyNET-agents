@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 
 import { buildInvocation } from "../scripts/lib/backends.mjs";
@@ -31,16 +32,31 @@ test("ollama without a model throws", () => {
   assert.throws(() => buildInvocation("ollama", { ...io, mode: "read", model: "m" }), /ossHome/);
 });
 
-test("agy write", () => {
-  assert.deepEqual(buildInvocation("agy", { ...io, mode: "write" }), {
-    cmd: "agy",
-    args: ["--output-format", "text", "--mode", "accept-edits", "--print-timeout", "0s", "--sandbox", "-p=do it"],
-    stdoutFile: "/jobs/out.md"
-  });
+// The permissions file an agy job runs with, read from the path its argv names.
+const agyPermissions = (mode) => {
+  const args = buildInvocation("agy", { ...io, mode }).args;
+  assert.ok(args.includes("--sandbox"), `${mode} job runs without --sandbox`);
+  return JSON.parse(fs.readFileSync(args[args.indexOf("--settings") + 1], "utf8")).permissions;
+};
+
+test("agy write job edits and runs shell commands in the sandbox", () => {
+  const inv = buildInvocation("agy", { ...io, mode: "write" });
+  assert.equal(inv.args[inv.args.indexOf("--mode") + 1], "accept-edits");
+  assert.equal(inv.stdoutFile, "/jobs/out.md");
+  const p = agyPermissions("write");
+  assert.deepEqual(p.allow.sort(), ["command(*)", "read_file(*)", "write_file(*)"]);
+  // unsandboxed(*) in deny also denies every sandboxed shell command; with no rule, leaving the sandbox ends the run.
+  assert.ok(!p.allow.includes("unsandboxed(*)") && !p.deny.includes("unsandboxed(*)"));
 });
 
-test("agy read", () => {
-  assert.deepEqual(buildInvocation("agy", { ...io, mode: "read" }).args, ["--output-format", "text", "--mode", "plan", "--print-timeout", "0s", "-p=do it"]);
+test("agy read job can only read", () => {
+  const args = buildInvocation("agy", { ...io, mode: "read" }).args;
+  assert.ok(!args.includes("--mode"), "read job must not run plan mode, which waits for a click");
+  const p = agyPermissions("read");
+  assert.deepEqual(p.allow, ["read_file(*)"]);
+  for (const rule of ["write_file(*)", "command(*)", "read_url(*)", "mcp(*)", "unsandboxed(*)"]) {
+    assert.ok(p.deny.includes(rule), `read job does not deny ${rule}`);
+  }
 });
 
 test("unknown backend throws", () => {
