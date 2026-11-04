@@ -19,16 +19,16 @@ function setup(extraEnv = {}) {
   fs.writeFileSync(path.join(repo, "a.txt"), "one\n");
   git("add", ".");
   git("commit", "-q", "-m", "init");
+  // Only named variables reach the CLI: host settings (OLLAMA_CODING_MODEL, SKYNET_SESSION_ID, ...) must not change results.
+  const keep = ["HOME", "TMPDIR", "LANG"].filter((name) => process.env[name] !== undefined);
   const env = {
-    ...process.env,
+    ...Object.fromEntries(keep.map((name) => [name, process.env[name]])),
     PATH: `${path.join(here, "fixtures", "bin")}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
     CLAUDE_PLUGIN_DATA: tmp("skynet-data-"),
     XDG_CONFIG_HOME: tmp("skynet-xdg-"),
     CLAUDE_SCRATCHPAD: tmp("skynet-scratch-"),
     ...extraEnv
   };
-  delete env.SKYNET_SESSION_ID;
-  delete env.OLLAMA_CODING_MODEL;
   const run =(...args) => {
     const r = spawnSync(process.execPath, [cli, ...args], { cwd: repo, env, encoding: "utf8" });
     return { code: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
