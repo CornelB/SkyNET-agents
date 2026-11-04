@@ -27,7 +27,7 @@ test("ollama runs through codex --oss", () => {
 });
 
 test("ollama without a model throws", () => {
-  assert.throws(() => buildInvocation("ollama", { ...io, mode: "read", ossHome: "/data/oss" }), /ollama model not configured/);
+  assert.throws(() => buildInvocation("ollama", { ...io, mode: "read", ossHome: "/data/oss" }), /OLLAMA_CODING_MODEL not set/);
   assert.throws(() => buildInvocation("ollama", { ...io, mode: "read", model: "m" }), /ossHome/);
 });
 

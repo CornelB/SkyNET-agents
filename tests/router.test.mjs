@@ -11,7 +11,7 @@ const cfg = (overrides = {}) => ({
   backends: {
     codex: { enabled: true, billing: "subscription" },
     agy: { enabled: true, billing: "subscription" },
-    ollama: { enabled: true, billing: "local", model: "m" },
+    ollama: { enabled: true, billing: "local" },
     ...overrides
   }
 });

@@ -134,12 +134,12 @@ test("delegate without --mode is rejected", () => {
 
 test("setup saves the config from flags", () => {
   const { env, run } = setup();
-  const r = run("setup", "--enable", "codex,ollama", "--billing", "codex=per-token", "--ollama-model", "m1");
+  const r = run("setup", "--enable", "codex,ollama", "--billing", "codex=per-token");
   assert.equal(r.code, 0, r.err);
   const saved = JSON.parse(fs.readFileSync(path.join(env.XDG_CONFIG_HOME, "skynet", "config.json"), "utf8"));
   assert.deepEqual(saved.backends.codex, { enabled: true, billing: "per-token" });
   assert.deepEqual(saved.backends.agy, { enabled: false, billing: "subscription" });
-  assert.deepEqual(saved.backends.ollama, { enabled: true, billing: "local", model: "m1" });
+  assert.deepEqual(saved.backends.ollama, { enabled: true, billing: "local" });
   assert.deepEqual(saved.backends.openrouter, {
     enabled: false,
     billing: "free",
@@ -215,7 +215,7 @@ test("a running job with a dead worker shows failed", async () => {
   assert.match(run("status", id).out, / failed .*worker gone/);
 });
 
-test("ollama without a model leaves no worktree or branch", () => {
+test("ollama without OLLAMA_CODING_MODEL leaves no worktree or branch", () => {
   const { repo, env, run } = setup();
   fs.mkdirSync(path.join(env.XDG_CONFIG_HOME, "skynet"));
   fs.writeFileSync(path.join(env.XDG_CONFIG_HOME, "skynet", "config.json"), JSON.stringify({ backends: { ollama: { enabled: true, billing: "local" } } }));

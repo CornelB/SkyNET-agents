@@ -34,11 +34,11 @@ const OPENROUTER_MODELS = {
 };
 const RATE_LIMITED = /\b429\b|rate[ -]?limit/i;
 // OpenRouter write jobs run the coding model and read jobs the reasoning model; the other backends have one model.
-// Ollama takes OLLAMA_CODING_MODEL from the environment (Claude Code settings env) over the saved model.
-const ollamaModel = (config) => process.env.OLLAMA_CODING_MODEL || config.backends.ollama?.model;
+// Ollama's model is OLLAMA_CODING_MODEL from the environment (Claude Code settings env); skynet saves none.
+const ollamaModel = () => process.env.OLLAMA_CODING_MODEL || undefined;
 const modelFor = (config, backend, mode) => {
   const cfg = config.backends[backend];
-  if (backend === "ollama") return ollamaModel(config);
+  if (backend === "ollama") return ollamaModel();
   return cfg?.models ? cfg.models[mode === "write" ? "coding" : "reasoning"] : cfg?.model;
 };
 const DEFAULT_TIMEOUT_S = 3600;
@@ -110,7 +110,6 @@ function setup(options) {
   for (const name of BACKENDS) {
     backends[name] = { enabled: enabled.includes(name), billing: billing[name] ?? DEFAULT_BILLING[name] ?? "subscription" };
   }
-  if (options["ollama-model"]) backends.ollama.model = options["ollama-model"];
   backends.openrouter.models = Object.fromEntries(Object.entries(OPENROUTER_MODELS).map(([role, id]) => [role, options[`openrouter-${role}-model`] ?? id]));
   if (options["agy-window"]) backends.agy.window = options["agy-window"];
   saveConfig({ backends });
@@ -119,7 +118,7 @@ function setup(options) {
 }
 
 // The GPU is read only when ollama could take the job.
-const ollamaGpu = (config) => (config.backends.ollama?.enabled ? readGpu({ model: ollamaModel(config) }) : undefined);
+const ollamaGpu = (config) => (config.backends.ollama?.enabled ? readGpu({ model: ollamaModel() }) : undefined);
 
 async function routeCommand() {
   const usage = await readUsage();
@@ -365,7 +364,7 @@ async function waitFor(options, positionals) {
 async function main(argv) {
   const [command, ...rest] = argv;
   const { options, positionals } = parseArgs(rest, {
-    valueOptions: ["mode", "paths", "backend", "enable", "billing", "ollama-model", "openrouter-reasoning-model", "openrouter-coding-model", "openrouter-decision-model", "openrouter-fallback-model", "agy-window", "timeout-s"],
+    valueOptions: ["mode", "paths", "backend", "enable", "billing","openrouter-reasoning-model", "openrouter-coding-model", "openrouter-decision-model", "openrouter-fallback-model", "agy-window", "timeout-s"],
     booleanOptions: ["parallel", "wait", "json", "all", "any"]
   });
   switch (command) {

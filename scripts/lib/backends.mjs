@@ -17,7 +17,7 @@ export function buildInvocation(backend, { mode, cwd, promptFile, outFile, promp
     const args = ["exec", "--skip-git-repo-check", "-C", cwd, "-s", mode === "write" ? "workspace-write" : "read-only", "-o", outFile];
     if (backend === "ollama") {
       if (!model) {
-        throw new Error("ollama model not configured");
+        throw new Error("OLLAMA_CODING_MODEL not set");
       }
       if (!ossHome) {
         throw new Error("ollama needs ossHome");
