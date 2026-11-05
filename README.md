@@ -8,11 +8,14 @@ A Claude Code plugin that delegates work to Codex, Antigravity (`agy`), OpenRout
 - [`codexbar`](https://github.com/steipete/CodexBar) for usage
 - one or more of `codex`, `agy`, `opencode`, `ollama`. Ollama runs through `codex exec --oss`, so it needs `codex` too. OpenRouter runs through `opencode run` and needs `OPENROUTER_API_KEY`.
 
-## Install (local)
+## Install
 
 ```bash
-claude plugin marketplace add /path/to/SkyNET-agents
-claude plugin install skynet@skynet-local
+claude plugin marketplace add CornelB/SkyNET-marketplace
+```
+
+```bash
+claude plugin install SkyNET-agents@SkyNET-marketplace
 ```
 
 Then run `/skynet:setup`.
