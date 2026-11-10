@@ -10,7 +10,7 @@ The CLI is `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs"`.
 
 1. Run `<cli> route`. Line 1 is the backend pick, line 2 the hand-off level from Claude's own usage. If line 1 starts with `no backend:`, show it and stop.
 2. Decide what to hand off. The request above is the floor. The hand-off level says how much more of the current task to give away: `hand off what was named`, `hand off any part a worker can do alone`, or `hand off everything but orchestration and diff review`.
-3. For each piece, write a brief of at most 15 lines: goal, files or paths, constraints, done-when. The worker has none of this conversation, and no network: no ssh, no DNS. Fetch remote logs or data into a local file first and name that file in the brief.
+3. For each piece, write a brief of at most 15 lines: goal, files or paths, constraints, done-when. The worker has none of this conversation. Codex, Ollama and agy workers have no network (no ssh, no DNS): fetch remote logs or data into a local file first and name that file in the brief.
 4. Pick the mode yourself: `write` to fix or implement, `read` to review, investigate or explain.
 5. Start each piece without waiting. Pass the brief on stdin with a quoted heredoc, never inside quotes on the command line:
    ```

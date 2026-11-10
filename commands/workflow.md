@@ -23,7 +23,7 @@ The CLI is `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs"`.
 6. Show the plan, one line per piece, and nothing else: `<n>. <piece> → <self | haiku/low | sonnet/medium | opus/high | skynet write | skynet read>`.
 7. Start all independent pieces in one message.
    - Claude subagent: a brief with goal, paths, constraints, done-when; set `model` and `effort`.
-   - External worker: start each one without waiting, brief on stdin with a quoted heredoc. External workers have no network (no ssh, no DNS): fetch remote logs or data into a local file first and name it in the brief. Run `wait` from the directory the jobs were started in. Each start prints `<job-id> → <backend> (...)`. Add `--parallel` to every writer when more than one writer runs at the same time.
+   - External worker: start each one without waiting, brief on stdin with a quoted heredoc. Codex, Ollama and agy workers have no network (no ssh, no DNS): fetch remote logs or data into a local file first and name it in the brief. Run `wait` from the directory the jobs were started in. Each start prints `<job-id> → <backend> (...)`. Add `--parallel` to every writer when more than one writer runs at the same time.
      ```
      <cli> delegate --mode <write|read> [--paths a,b] [--parallel] <<'BRIEF'
      <brief of at most 15 lines>

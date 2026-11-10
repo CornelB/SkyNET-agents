@@ -31,7 +31,7 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 
 Backend names: `codex`, `agy`, `openrouter`, `ollama`.
 
-Codex jobs run in the codex sandbox, which has no network: `ssh` fails with "Could not resolve hostname" and a permission error on `/etc/ssh/ssh_config.d/*`, so a remote log read comes back as an access failure, not as "nothing matched". Fetch remote data into a local file first. A job is registered under the directory it was started from; `wait`, `result`, `status` and `cancel` run from another directory do not see it ("No job found").
+Codex and Ollama jobs run in the codex sandbox (`-s read-only` or `workspace-write`, network off by default), so their shell has no network; codex itself still reaches the model, and for Ollama that is the local server: `ssh` fails with "Could not resolve hostname" and a permission error on `/etc/ssh/ssh_config.d/*`, so a remote log read comes back as an access failure, not as "nothing matched". Fetch remote data into a local file first. A job is registered under the directory it was started from; `wait`, `result`, `status` and `cancel` run from another directory do not see it ("No job found").
 
 Ollama jobs run codex with its own empty `CODEX_HOME` (`<job state root>/codex-oss-home`), so the user's codex config, MCP servers, skills and `AGENTS.md` do not reach the local model.
 
