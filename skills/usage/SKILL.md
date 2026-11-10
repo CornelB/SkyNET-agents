@@ -45,8 +45,8 @@ Example: "how much claude usage is left?" names one provider. The command is `py
 The script prints one line per provider. Each line is one of these 3 kinds:
 
 1. A usage line, for example `claude 5h 12% (resets 14:00) · week 82% ...`. The percent is the part of the limit that is used.
-2. An error line, for example `grok error: ...`. That provider gives no data. Do not send work to that provider.
-3. A `no usage data` line. That provider gives no data. Do not send work to that provider.
+2. An error line, for example `grok error: ...`. The usage is unknown. The provider itself can still work: `skynet route` ranks such a backend after ollama.
+3. A `no usage data` line. The usage is unknown, same as an error line.
 
 ## Step 4: Decide
 
