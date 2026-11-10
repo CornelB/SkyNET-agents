@@ -10,7 +10,7 @@
       "name": "skynet",
       "source": "./",
       "description": "Usage-aware delegation to Codex, Antigravity and Ollama.",
-      "version": "0.8.1"
+      "version": "0.8.2"
     }
   ]
 }
