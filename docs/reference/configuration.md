@@ -31,6 +31,8 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 
 Backend names: `codex`, `agy`, `openrouter`, `ollama`.
 
+Codex jobs run in the codex sandbox, which has no network: `ssh` fails with "Could not resolve hostname" and a permission error on `/etc/ssh/ssh_config.d/*`, so a remote log read comes back as an access failure, not as "nothing matched". Fetch remote data into a local file first. A job is registered under the directory it was started from; `wait`, `result`, `status` and `cancel` run from another directory do not see it ("No job found").
+
 Ollama jobs run codex with its own empty `CODEX_HOME` (`<job state root>/codex-oss-home`), so the user's codex config, MCP servers, skills and `AGENTS.md` do not reach the local model.
 
 agy jobs run `agy --sandbox --settings <file>`. The file is this plugin's own: `scripts/agy-settings-read.json` for read jobs, `scripts/agy-settings-write.json` for write jobs. It replaces the permissions in `~/.gemini/antigravity-cli/settings.json` for that run only; model and project still come from that file, which skynet never writes. Read jobs may only read files; writes, shell, URL reads, MCP and leaving the sandbox are denied. Write jobs may read, write and run shell commands with `--mode accept-edits`; URL reads and MCP are denied, and a request to leave the sandbox ends the job (a `deny` rule for `unsandboxed` would also deny every sandboxed shell command). The sandbox shell is read-only and has no network, so builds, installs and tests that write files fail: give those jobs to codex. agy's `search_web` tool cannot be turned off.
