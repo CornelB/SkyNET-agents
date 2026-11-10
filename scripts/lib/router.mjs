@@ -50,16 +50,16 @@ function assess(backend, usage, cfg, gpu) {
       ? { backend, available: true, tier: 4, room: 0, status: "openrouter per-token" }
       : { backend, available: true, tier: 2, room: 0, status: "openrouter free" };
   }
-  const entry = usage.find((e) => e.provider === CLOUD[backend]);
-  if (entry?.error) {
-    return { backend, available: false, status: `${backend} error` };
+  // codexbar reads plan quotas, not API billing, and misreports API-billed backends; per-token never consults it.
+  if (cfg.billing === "per-token") {
+    return { backend, available: true, tier: 4, room: 0, status: `${backend} per-token` };
   }
-  const windows = entry ? relevantWindows(backend, entry, cfg) : [];
+  const entry = usage.find((e) => e.provider === CLOUD[backend]);
+  const windows = entry && !entry.error ? relevantWindows(backend, entry, cfg) : [];
   if (!windows.length) {
-    // An API-key backend has no plan windows to read; it stays the last resort.
-    return cfg.billing === "per-token"
-      ? { backend, available: true, tier: 4, room: 0, status: `${backend} per-token, no usage data` }
-      : { backend, available: false, status: `${backend} no usage data` };
+    // A failed usage read says nothing about the backend itself (codexbar can lose a provider's quota
+    // while its CLI works), so an unknown subscription ranks with near full, after ollama.
+    return { backend, available: true, tier: 3, room: 0, status: `${backend} usage unknown` };
   }
   const full = windows.find((w) => isFull(backend, w));
   if (full) {
@@ -67,8 +67,8 @@ function assess(backend, usage, cfg, gpu) {
   }
   const top = windows.reduce((a, b) => (b.used_percent > a.used_percent ? b : a));
   const near = windows.some((w) => w.used_percent >= NEAR);
-  const tier = cfg.billing === "per-token" ? 4 : near ? 3 : 1;
-  const label = tier === 4 ? " per-token" : near ? " near full" : "";
+  const tier = near ? 3 : 1;
+  const label = near ? " near full" : "";
   return { backend, available: true, tier, room: 100 - top.used_percent, status: `${backend} ${top.name} ${Math.round(top.used_percent)}%${label}` };
 }
 

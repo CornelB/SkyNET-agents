@@ -47,13 +47,19 @@ test("per-token ranks after ollama", () => {
 test("no usage data falls to ollama", () => {
   const r = route([], cfg());
   assert.equal(r.backend, "ollama");
-  assert.match(r.line, /no usage data/);
+  assert.match(r.line, /usage unknown/);
 });
 
-test("errored provider is skipped", () => {
+test("errored provider ranks after known room", () => {
   const r = route([{ provider: "codex", error: "boom" }, agy(10)], cfg());
   assert.equal(r.backend, "agy");
-  assert.match(r.line, /codex error/);
+  assert.match(r.line, /codex usage unknown/);
+});
+
+test("errored provider is still routable without ollama", () => {
+  const r = route([codex(80, 6), { provider: "antigravity", error: "auth not found" }], cfg({ ollama: off }));
+  assert.equal(r.backend, "codex");
+  assert.equal(route([{ provider: "antigravity", error: "auth not found" }], cfg({ codex: off, ollama: off })).backend, "agy");
 });
 
 test("agy highest model window counts without config", () => {
@@ -80,6 +86,14 @@ test("handoff levels follow claude week", () => {
   assert.equal(handoffLevel([claude(90)]).level, "all");
   assert.equal(handoffLevel([]).level, "named");
   assert.match(handoffLevel([claude(84)]).line, /^claude week 84% → /);
+});
+
+test("per-token backend ignores codexbar usage", () => {
+  const perToken = { enabled: true, billing: "per-token" };
+  const errored = route([{ provider: "antigravity", error: "auth not found" }], cfg({ codex: off, ollama: off, agy: perToken }));
+  assert.equal(errored.backend, "agy");
+  assert.match(errored.line, /^→ agy \(agy per-token\)$/);
+  assert.equal(route([agy(99)], cfg({ codex: off, ollama: off, agy: perToken })).backend, "agy");
 });
 
 test("per-token backend without usage windows is still a last resort", () => {
