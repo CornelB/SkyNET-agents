@@ -16,14 +16,14 @@ The CLI is `node "${CLAUDE_PLUGIN_ROOT}/scripts/skynet.mjs"`.
    - an independent review or comparison has a clear benefit.
 3. Read usage: `<cli> route` (line 1 the external pick, line 2 the hand-off level from Claude's week) and `python3 "${CLAUDE_PLUGIN_ROOT}/skills/usage/scripts/ai_usage.py" --provider claude` (the `Fable only` window).
 4. Split the work. Each piece has one objective, the minimum inputs, constraints, a deliverable, and how you will check it. Dependent pieces run in order. Use the fewest agents that cover the work; no duplicate assignments unless comparison is the point. You own the synthesis.
-5. Pick the executor for each piece. A model or backend the user named wins.
-   - **External worker** (`skynet`): self-contained code, review or investigation that needs nothing from this conversation and no Claude-only tools (MCP servers, connectors, the browser). Hand off more of these as the hand-off level rises. Not when line 1 says `no backend:`.
+5. Pick the executor for each piece. A model or backend the user named wins, except over the external-worker condition.
+   - **External worker** (`skynet`): self-contained code, review or investigation that needs nothing from this conversation. A worker is offline: it takes local work only, so no remote host or service (ssh, HTTP, a package install, a git fetch or push) and no Claude-only tools (MCP servers, connectors, the browser, this session's credentials). Hand off more of these as the hand-off level rises. Not when line 1 says `no backend:`.
    - **Claude subagent** (Agent tool): everything else. Tier: Haiku for small, mechanical, easily checked work; Sonnet for implementation and scoped research; Opus for ambiguous or cross-cutting work and substantive review; Fable only when the user asks for it or the final result needs the strongest reasoning, and never when `Fable only` is at 95% or more.
    - **Effort**: pass `effort` on every Agent call, `medium` unless the piece is unusually hard, high-stakes, or a failed retry (raise) or trivial (`low`). An unset `effort` runs at the agent's default, not the level you chose.
 6. Show the plan, one line per piece, and nothing else: `<n>. <piece> → <self | haiku/low | sonnet/medium | opus/high | skynet write | skynet read>`.
 7. Start all independent pieces in one message.
    - Claude subagent: a brief with goal, paths, constraints, done-when; set `model` and `effort`.
-   - External worker: start each one without waiting, brief on stdin with a quoted heredoc. Codex, Ollama and agy workers have no network (no ssh, no DNS): fetch remote logs or data into a local file first and name it in the brief. Run `wait` from the directory the jobs were started in. Each start prints `<job-id> → <backend> (...)`. Add `--parallel` to every writer when more than one writer runs at the same time.
+   - External worker: start each one without waiting, brief on stdin with a quoted heredoc. Split a piece that has a remote part: fetch remote logs or data into a local file first and name it in the brief, and apply any remote change yourself after the job. Run `wait` from the directory the jobs were started in. Each start prints `<job-id> → <backend> (...)`. Add `--parallel` to every writer when more than one writer runs at the same time.
      ```
      <cli> delegate --mode <write|read> [--paths a,b] [--parallel] <<'BRIEF'
      <brief of at most 15 lines>
