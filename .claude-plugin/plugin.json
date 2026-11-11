@@ -1,6 +1,6 @@
 {
   "name": "skynet",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Delegate work from Claude Code to Codex, Antigravity, OpenRouter or local Ollama, routed by live usage, as tracked background jobs.",
   "author": {
     "name": "CornelB",
