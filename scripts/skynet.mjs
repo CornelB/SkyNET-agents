@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs } from "./lib/args.mjs";
-import { buildInvocation } from "./lib/backends.mjs";
+import { buildInvocation, ollamaContextWindow } from "./lib/backends.mjs";
 import { configPath, detectBackends, loadConfig, saveConfig } from "./lib/config.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { buildStatusSnapshot, formatElapsedDuration, readStoredJob, resolveCancelableJob, resolveResultJob } from "./lib/job-control.mjs";
@@ -246,8 +246,9 @@ async function worker(id, workspaceRoot = process.cwd()) {
     throw new UsageError(`no job ${id}`);
   }
   const prompt = fs.readFileSync(job.promptFile, "utf8");
+  const contextWindow = job.backend === "ollama" && job.model ? ollamaContextWindow(job.model) : undefined;
   const attempt = (model) =>
-    runBackend(buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model, ossHome: ossHome() }), {
+    runBackend(buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model, ossHome: ossHome(), contextWindow }), {
       cwd: job.cwd,
       logFile: job.logFile,
       timeoutS: job.timeoutS ?? DEFAULT_TIMEOUT_S,

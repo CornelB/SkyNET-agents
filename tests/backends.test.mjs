@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import { buildInvocation } from "../scripts/lib/backends.mjs";
+import { buildInvocation, ollamaContextWindow } from "../scripts/lib/backends.mjs";
 
 const io = { cwd: "/repo", promptFile: "/jobs/p.md", outFile: "/jobs/out.md", prompt: "do it" };
 
@@ -25,6 +25,26 @@ test("ollama runs through codex --oss", () => {
     stdinFile: "/jobs/p.md",
     env: { CODEX_HOME: "/data/oss" }
   });
+});
+
+test("ollama with a served window tells codex the window and compacts at 3/4 of it", () => {
+  const args = buildInvocation("ollama", { ...io, mode: "read", model: "m", ossHome: "/data/oss", contextWindow: 32768 }).args;
+  assert.deepEqual(args.slice(args.indexOf("m") + 1), ["-c", "model_context_window=32768", "-c", "model_auto_compact_token_limit=24576", "-"]);
+});
+
+const show = (stdout, status = 0) => () => ({ status, stdout, error: null });
+const SHOW = "  Model\n    context length      65536\n\n  Parameters\n    num_ctx             32768\n";
+
+test("ollamaContextWindow reads num_ctx, else the environment, capped at the trained length", () => {
+  assert.equal(ollamaContextWindow("m", { run: show(SHOW), env: {} }), 32768);
+  assert.equal(ollamaContextWindow("m", { run: show("    context length      65536\n"), env: { OLLAMA_CONTEXT_LENGTH: "16384" } }), 16384);
+  assert.equal(ollamaContextWindow("m", { run: show(SHOW.replace("32768", "999999")), env: {} }), 65536);
+});
+
+test("ollamaContextWindow is undefined when nothing states the window or ollama show fails", () => {
+  assert.equal(ollamaContextWindow("m", { run: show("    context length      65536\n"), env: {} }), undefined);
+  assert.equal(ollamaContextWindow("m", { run: show(SHOW, 1), env: {} }), undefined);
+  assert.equal(ollamaContextWindow("m", { run: () => ({ status: 0, stdout: "", error: new Error("ENOENT") }), env: {} }), undefined);
 });
 
 test("ollama without a model throws", () => {
