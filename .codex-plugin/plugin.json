@@ -1,0 +1,11 @@
+{
+  "name": "skynet",
+  "version": "0.9.2",
+  "description": "Set up, route and track delegated work across Codex, Antigravity, OpenRouter and local Ollama, with usage-aware workflows and orchestration.",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "SkyNET Agents",
+    "shortDescription": "Route and track delegated agent work"
+  }
+}
