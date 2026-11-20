@@ -19,9 +19,9 @@ A fixed server per role (`OLLAMA_CODING_HOST`, `OLLAMA_REVIEWER_HOST`) would be 
 
 1. `OLLAMA_SELECTOR` (environment, set in the `env` block of Claude Code `settings.json` like the model variables): the absolute path of an executable. Unset or empty: both plugins behave exactly as today, and no selector code path runs. Set to a path that is not absolute, does not exist or is not executable: refusal `OLLAMA_SELECTOR not executable`, checked before any call.
 2. Call: `$OLLAMA_SELECTOR <role> <model>`. `<role>` is `coding` or `review`. `<model>` is the role's model variable, verbatim. stdin is empty; the environment is inherited. stdout goes to a temporary file, not a pipe, so a child the selector leaves behind cannot hold the call open.
-3. Cap: 10 seconds, then the selector is killed with SIGKILL.
+3. Cap: 10 seconds, then the selector is killed.
    - Node: its own `spawnSync` with `timeout` and `killSignal: "SIGKILL"`. `runCommand` in `scripts/lib/process.mjs` drops `timeout` and maps a signal death to status 0, so it is not used here.
-   - Bash: `rc_run_capped` from `scripts/lib/common.sh` (no GNU `timeout`; the repo also runs on macOS bash 3.2).
+   - Bash: `rc_run_capped` from `scripts/lib/common.sh` (no GNU `timeout`; the repo also runs on macOS bash 3.2); its kill and 124 marker.
 4. Answer. Only the first line of stdout counts, trimmed; later lines are ignored.
    - Exit 0, first line empty: the default server, as today.
    - Exit 0, first line matches `^(http://)?[A-Za-z0-9._-]+:[0-9]+/?$`: the server for this job. U is that line with `http://` added when absent and a trailing `/` removed.
@@ -43,7 +43,7 @@ A fixed server per role (`OLLAMA_CODING_HOST`, `OLLAMA_REVIEWER_HOST`) would be 
    - `delegate --backend ollama`, whenever `OLLAMA_CODING_MODEL` is set. This path skips `route()` and the `enabled` flag today (`scripts/skynet.mjs`, `delegate`).
 2. A refusal makes `ollama` unavailable for routing, with status `ollama skipped, <reason>`, and it does not count as an idle GPU for the hand-off level. `delegate --backend ollama` fails with the same reason before it creates a job.
 3. Idle rule with a selector: any answer other than a refusal (U or the default server) counts as idle, so `ollama` ranks first and the hand-off level rises as with an idle GPU today. The selector already judges whether its server is free; the local amdgpu read can describe a card the selected server does not use. With a selector set, `readGpu` is not consulted for the idle decision.
-4. With U, the `ollama ps` check in `readGpu` runs against U, and the status line names it: `ollama <U>, ...`. With `OLLAMA_SELECTOR` unset the status stays `ollama local, ...` (pinned in `tests/router.test.mjs`).
+4. With a selector answer, the status line names the server: `ollama <U>, selected` or `ollama default server, selected`. With `OLLAMA_SELECTOR` unset the status stays `ollama local, ...` (pinned in `tests/router.test.mjs`).
 5. The job record stores U as `ollamaHost` (`null` for the default server). The worker uses the stored value for `ollamaContextWindow` and for the invocation environment; it does not call the selector again. `ollamaContextWindow` already takes `env` for `OLLAMA_CONTEXT_LENGTH`; the spawn environment gets a parameter of its own.
 6. `setup` (`ollama list`) is unchanged.
 
