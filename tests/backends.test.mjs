@@ -104,3 +104,21 @@ test("openrouter read uses the plan agent", () => {
 test("openrouter without a model throws", () => {
   assert.throws(() => buildInvocation("openrouter", { ...io, mode: "read" }), /openrouter model not configured/);
 });
+
+test("ollama on a selected server sends codex there", () => {
+  const sel = buildInvocation("ollama", { ...io, mode: "read", model: "m", ossHome: "/data/oss", ollamaHost: "http://h:1" });
+  assert.deepEqual(sel.env, { CODEX_HOME: "/data/oss", OLLAMA_HOST: "http://h:1", CODEX_OSS_BASE_URL: "http://h:1/v1" });
+  assert.deepEqual(buildInvocation("ollama", { ...io, mode: "read", model: "m", ossHome: "/data/oss", ollamaHost: null }).env, { CODEX_HOME: "/data/oss" });
+});
+
+test("ollamaContextWindow asks the selected server", () => {
+  const calls = [];
+  const run = (cmd, args, options) => {
+    calls.push(options);
+    return { status: 0, stdout: SHOW, error: null };
+  };
+  assert.equal(ollamaContextWindow("m", { run, env: {}, host: "http://h:1" }), 32768);
+  assert.equal(calls[0].env.OLLAMA_HOST, "http://h:1");
+  ollamaContextWindow("m", { run, env: {} });
+  assert.equal(calls[1], undefined);
+});

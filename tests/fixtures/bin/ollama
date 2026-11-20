@@ -1,0 +1,11 @@
+#!/usr/bin/env node
+// Fake ollama: `show` prints a trained context of 131072, or exits 1 with FAKE_OLLAMA_SHOW_FAIL set.
+// Each call appends OLLAMA_HOST=<value> to $FAKE_OLLAMA_LOG when both are set.
+import fs from "node:fs";
+if (process.env.FAKE_OLLAMA_LOG && process.env.OLLAMA_HOST) {
+  fs.appendFileSync(process.env.FAKE_OLLAMA_LOG, `OLLAMA_HOST=${process.env.OLLAMA_HOST}\n`);
+}
+if (process.argv[2] === "show") {
+  if (process.env.FAKE_OLLAMA_SHOW_FAIL) process.exit(1);
+  process.stdout.write("  Model\n    context length      131072\n");
+}

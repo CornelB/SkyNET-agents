@@ -33,7 +33,7 @@ Backend names: `codex`, `agy`, `openrouter`, `ollama`.
 
 Delegation treats every worker as offline: a task that needs a remote host or service (ssh, HTTP, a package install, a git fetch or push), an MCP server, a connector, the browser or the session's credentials stays with Claude. Codex, Ollama and agy shells have no network. An OpenRouter job has network but no sandbox, and its provider can log prompts, so it gets no remote work either.
 
-Codex and Ollama jobs run in the codex sandbox (`-s read-only` or `workspace-write`, network off by default), so their shell has no network; codex itself still reaches the model, and for Ollama that is the local server: `ssh` fails with "Could not resolve hostname" and a permission error on `/etc/ssh/ssh_config.d/*`, so a remote log read comes back as an access failure, not as "nothing matched". Fetch remote data into a local file first. A job is registered under the directory it was started from; `wait`, `result`, `status` and `cancel` run from another directory do not see it ("No job found").
+Codex and Ollama jobs run in the codex sandbox (`-s read-only` or `workspace-write`, network off by default), so their shell has no network; codex itself still reaches the model, and for Ollama that is the local server, or the server `OLLAMA_SELECTOR` picks: `ssh` fails with "Could not resolve hostname" and a permission error on `/etc/ssh/ssh_config.d/*`, so a remote log read comes back as an access failure, not as "nothing matched". Fetch remote data into a local file first. A job is registered under the directory it was started from; `wait`, `result`, `status` and `cancel` run from another directory do not see it ("No job found").
 
 Ollama jobs run codex with its own empty `CODEX_HOME` (`<job state root>/codex-oss-home`), so the user's codex config, MCP servers, skills and `AGENTS.md` do not reach the local model.
 
@@ -48,6 +48,7 @@ OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for
 | `CLAUDE_PLUGIN_DATA` | Job state root. Default: `<tmpdir>/skynet`. |
 | `CLAUDE_SCRATCHPAD` | Where `--parallel` worktrees go. Default: the system temp dir. |
 | `OLLAMA_CODING_MODEL` | An `ollama list` name. The model that ollama jobs run (`codex exec --oss --local-provider ollama -c model_provider=ollama -m <model>`) and that the GPU-idle `ollama ps` check looks for. Required for ollama jobs. Set it in the `env` block of Claude Code `settings.json`. |
+| `OLLAMA_SELECTOR` | Optional. The absolute path of an executable that picks the Ollama server for each ollama job; see [Ollama selector](#ollama-selector). Set it in the `env` block of Claude Code `settings.json`. Unset: the default server. |
 | `SKYNET_SESSION_ID` | When set, `status`, `result` and `cancel` without a job id see only this session's jobs. |
 
 ## Routing
@@ -57,5 +58,23 @@ OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for
 | Full | 5h at 90% or more; week or model window at 95% or more |
 | Near full | any counted window at 75% or more |
 | Order | subscription with room (most room first), free openrouter, ollama, subscription near full, per-token |
-| GPU idle | ollama enabled and the amdgpu card with the most VRAM under 20% busy with under half its VRAM in use, or `ollama ps` lists `OLLAMA_CODING_MODEL`. Ollama then ranks first. No amdgpu card: the order above applies. |
+| GPU idle | ollama enabled and, with `OLLAMA_SELECTOR` set, any selector answer other than a refusal (a refusal takes ollama out of routing); without a selector, the amdgpu card with the most VRAM under 20% busy with under half its VRAM in use, or `ollama ps` lists `OLLAMA_CODING_MODEL`. Ollama then ranks first. No amdgpu card: the order above applies. |
 | Hand-off level (Claude week) | below 70%: what was named; 70% or more: any part a worker can do alone; 90% or more: everything but orchestration and diff review. GPU idle raises "what was named" to "any part a worker can do alone". |
+
+## Ollama selector
+
+`OLLAMA_SELECTOR` lets a machine run more than one Ollama server and send each model to the server that runs it well. The model stays `OLLAMA_CODING_MODEL`; the selector only names the server. The same variable drives the review-board `codex-oss` seat (role `review`). Full contract: [the spec](../specs/2026-11-20-ollama-selector.md).
+
+- Call: `$OLLAMA_SELECTOR coding <model>`, stdin empty, 10 seconds at most. It runs on every `route` and auto-routed `delegate` while ollama is enabled, and on `delegate --backend ollama`, so it must be quick and must not load, unload or pull models.
+- Answer: print `host:port` (or `http://host:port`) to run there; print nothing for the default server; exit non-zero to keep the job off Ollama, with the reason on the last stderr line.
+- With a server, codex gets `CODEX_OSS_BASE_URL=http://host:port/v1` and skynet's own `ollama` calls get `OLLAMA_HOST`. A server that cannot `ollama show` the model is a refusal.
+- Any answer other than a refusal counts as an idle GPU for routing.
+- The selector is the user's file, outside this plugin: plugin updates do not touch it.
+
+```bash
+#!/usr/bin/env bash
+# ollama-select <role> <model>: print the server for this model; print nothing for the default server; exit 1 to skip Ollama.
+case "$2" in
+  *-big*) echo 127.0.0.1:11435 ;;
+esac
+```

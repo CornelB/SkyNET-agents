@@ -13,6 +13,7 @@ import { readStdinIfPiped } from "./lib/fs.mjs";
 import { buildStatusSnapshot, formatElapsedDuration, readStoredJob, resolveCancelableJob, resolveResultJob } from "./lib/job-control.mjs";
 import { gpuIdle, readGpu } from "./lib/gpu.mjs";
 import { handoffLevel, route } from "./lib/router.mjs";
+import { selectOllamaServer } from "./lib/selector.mjs";
 import { ensureStateDir, generateJobId, resolveJobLogFile, resolveJobsDir, resolveStateDir, upsertJob, writeJobFile } from "./lib/state.mjs";
 import { appendLogLine, createJobRecord, nowIso, runTrackedJob } from "./lib/tracked-jobs.mjs";
 import { readUsage } from "./lib/usage.mjs";
@@ -117,15 +118,29 @@ function setup(options) {
   return 0;
 }
 
-// The GPU is read only when ollama could take the job.
-const ollamaGpu = (config) => (config.backends.ollama?.enabled ? readGpu({ model: ollamaModel() }) : undefined);
+// OLLAMA_SELECTOR's answer for the coding model; undefined without a selector or a model.
+const ollamaSelection = () => (ollamaModel() ? selectOllamaServer("coding", ollamaModel()) : undefined);
+
+// What routing knows about ollama, read only when ollama could take the job. A selector answer replaces
+// the GPU read: the selector judges whether its server is free.
+function ollamaState(config) {
+  if (!config.backends.ollama?.enabled) {
+    return { gpu: undefined, selection: undefined, idle: false };
+  }
+  const selection = ollamaSelection();
+  if (selection) {
+    return { gpu: undefined, selection, idle: !selection.refused };
+  }
+  const gpu = readGpu({ model: ollamaModel() });
+  return { gpu, selection, idle: gpu !== undefined && gpuIdle(gpu) };
+}
 
 async function routeCommand() {
   const usage = await readUsage();
   const config = loadConfig();
-  const gpu = ollamaGpu(config);
-  print(route(usage, config, gpu).line);
-  print(handoffLevel(usage, { ollamaIdle: gpu !== undefined && gpuIdle(gpu) }).line);
+  const { gpu, selection, idle } = ollamaState(config);
+  print(route(usage, config, gpu, selection).line);
+  print(handoffLevel(usage, { ollamaIdle: idle }).line);
   return 0;
 }
 
@@ -149,17 +164,28 @@ async function delegate(options, positionals) {
   const config = loadConfig();
   let backend = options.backend;
   let reason = `→ ${backend} (override)`;
+  let selection;
   if (!backend) {
-    const picked = route(await readUsage(), config, ollamaGpu(config));
+    const state = ollamaState(config);
+    selection = state.selection;
+    const picked = route(await readUsage(), config, state.gpu, selection);
     if (!picked.backend) {
       print(picked.line);
       return 1;
     }
     ({ backend, line: reason } = picked);
+  } else if (backend === "ollama") {
+    // An override skips routing and the enabled flag, but never the selector.
+    selection = ollamaSelection();
+    if (selection?.refused) {
+      process.stderr.write(`ollama skipped, ${selection.refused}\n`);
+      return 1;
+    }
   }
   if (!BACKENDS.includes(backend)) {
     throw new UsageError(`unknown backend ${backend}`);
   }
+  const ollamaHost = backend === "ollama" && selection && !selection.refused ? selection.host : null;
 
   const workspaceRoot = resolveWorkspaceRoot(cwd);
   const id = generateJobId("dlg");
@@ -190,6 +216,7 @@ async function delegate(options, positionals) {
     promptFile,
     outFile,
     model: modelFor(config, backend, options.mode) ?? null,
+    ollamaHost,
     fallbackModel: config.backends[backend]?.models?.fallback ?? null,
     timeoutS,
     tree,
@@ -246,9 +273,9 @@ async function worker(id, workspaceRoot = process.cwd()) {
     throw new UsageError(`no job ${id}`);
   }
   const prompt = fs.readFileSync(job.promptFile, "utf8");
-  const contextWindow = job.backend === "ollama" && job.model ? ollamaContextWindow(job.model) : undefined;
+  const contextWindow = job.backend === "ollama" && job.model ? ollamaContextWindow(job.model, { host: job.ollamaHost }) : undefined;
   const attempt = (model) =>
-    runBackend(buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model, ossHome: ossHome(), contextWindow }), {
+    runBackend(buildInvocation(job.backend, { mode: job.mode, cwd: job.cwd, promptFile: job.promptFile, outFile: job.outFile, prompt, model, ossHome: ossHome(), contextWindow, ollamaHost: job.ollamaHost }), {
       cwd: job.cwd,
       logFile: job.logFile,
       timeoutS: job.timeoutS ?? DEFAULT_TIMEOUT_S,

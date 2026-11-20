@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import { runCommand } from "./process.mjs";
+import { ollamaHostEnv } from "./selector.mjs";
 
 // argv for each backend. Ollama runs through codex --oss so it gets codex's harness and sandbox.
 // agy takes the prompt as -p=<text> (it does not read stdin; the = keeps a leading "-" from reading as a flag).
@@ -28,8 +29,9 @@ const OPENCODE_JOB_CONFIG = {
 // The context ollama serves a model with, as stated: its num_ctx parameter, else OLLAMA_CONTEXT_LENGTH;
 // never above the trained context length. undefined when nothing states it or ollama cannot show the
 // model: ollama's own default depends on VRAM, and a guess passed to codex is worse than none.
-export function ollamaContextWindow(model, { run = runCommand, env = process.env } = {}) {
-  const result = run("ollama", ["show", model]);
+// host: the server the selector picked (null or undefined = the default server).
+export function ollamaContextWindow(model, { run = runCommand, env = process.env, host } = {}) {
+  const result = host ? run("ollama", ["show", model], { env: { ...process.env, ...ollamaHostEnv(host) } }) : run("ollama", ["show", model]);
   if (result.error || result.status !== 0) {
     return undefined;
   }
@@ -42,7 +44,7 @@ export function ollamaContextWindow(model, { run = runCommand, env = process.env
 // contextWindow (ollama): codex assumes 272k for a model it does not know and never compacts before
 // ollama rejects the request. With the served window it compacts at 3/4 of it: codex's own 9/10 leaves
 // too little room for a step's tool outputs plus the compaction request.
-export function buildInvocation(backend, { mode, cwd, promptFile, outFile, prompt, model, ossHome, contextWindow }) {
+export function buildInvocation(backend, { mode, cwd, promptFile, outFile, prompt, model, ossHome, contextWindow, ollamaHost }) {
   if (backend === "codex" || backend === "ollama") {
     const args = ["exec", "--skip-git-repo-check", "-C", cwd, "-s", mode === "write" ? "workspace-write" : "read-only", "-o", outFile];
     if (backend === "ollama") {
@@ -58,7 +60,7 @@ export function buildInvocation(backend, { mode, cwd, promptFile, outFile, promp
       if (contextWindow) {
         args.push("-c", `model_context_window=${contextWindow}`, "-c", `model_auto_compact_token_limit=${Math.floor((contextWindow * 3) / 4)}`);
       }
-      return { cmd: "codex", args: [...args, "-"], stdinFile: promptFile, env: { CODEX_HOME: ossHome } };
+      return { cmd: "codex", args: [...args, "-"], stdinFile: promptFile, env: { CODEX_HOME: ossHome, ...ollamaHostEnv(ollamaHost) } };
     }
     return { cmd: "codex", args: [...args, "-"], stdinFile: promptFile };
   }

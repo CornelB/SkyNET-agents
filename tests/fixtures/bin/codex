@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 // Fake codex exec: FAKE_MODE=ok writes the prompt echo to -o, fail exits 3, sleep hangs.
 // FAKE_EDIT=1 also writes edited.txt into the -C directory. FAKE_DELAY_MS waits before doing either.
+// Appends CODEX_OSS_BASE_URL=<value> to $FAKE_CODEX_ENV_LOG when both are set.
 import fs from "node:fs";
+if (process.env.FAKE_CODEX_ENV_LOG && process.env.CODEX_OSS_BASE_URL) {
+  fs.appendFileSync(process.env.FAKE_CODEX_ENV_LOG, `CODEX_OSS_BASE_URL=${process.env.CODEX_OSS_BASE_URL}\n`);
+}
 const args = process.argv.slice(2);
 const out = args[args.indexOf("-o") + 1];
 const mode = process.env.FAKE_MODE ?? "ok";

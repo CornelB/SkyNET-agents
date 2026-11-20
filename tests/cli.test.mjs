@@ -337,3 +337,77 @@ test("wait over all-completed jobs exits 0", () => {
   const b = idOf(run("delegate", "--backend", "codex", "--mode", "read", "--", "b"));
   assert.equal(run("wait", a, b, "--timeout-s", "15").code, 0);
 });
+
+// A selector in the test's temp dir: prints `body`'s answer and appends one line per call to `calls`.
+function withSelector(env, body, { enabled = true } = {}) {
+  const dir = tmp("skynet-sel-");
+  const file = path.join(dir, "select");
+  const calls = path.join(dir, "calls");
+  fs.writeFileSync(file, `#!/usr/bin/env bash\necho "$@" >> "${calls}"\n${body}\n`, { mode: 0o755 });
+  fs.mkdirSync(path.join(env.XDG_CONFIG_HOME, "skynet"), { recursive: true });
+  fs.writeFileSync(path.join(env.XDG_CONFIG_HOME, "skynet", "config.json"), JSON.stringify({ backends: { codex: { enabled: true, billing: "subscription" }, ollama: { enabled, billing: "local" } } }));
+  const logs = { codex: path.join(dir, "codex.env"), ollama: path.join(dir, "ollama.env") };
+  const extra = { OLLAMA_SELECTOR: file, OLLAMA_CODING_MODEL: "m", FAKE_CODEX_ENV_LOG: logs.codex, FAKE_OLLAMA_LOG: logs.ollama };
+  const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, "utf8") : "");
+  return { extra, calls: () => read(calls).split("\n").filter(Boolean), log: (name) => read(logs[name]) };
+}
+
+test("delegate --backend ollama runs the job on the selected server and asks once", () => {
+  const { env, runWith } = setup();
+  const sel = withSelector(env, "echo 127.0.0.1:11435");
+  const r = runWith(sel.extra, "delegate", "--backend", "ollama", "--mode", "read", "--wait", "--", "hi");
+  assert.equal(r.code, 0, r.err);
+  const id = r.out.split(" ")[0];
+  assert.equal(JSON.parse(runWith(sel.extra, "status", id, "--json").out).ollamaHost, "http://127.0.0.1:11435");
+  assert.match(sel.log("codex"), /^CODEX_OSS_BASE_URL=http:\/\/127\.0\.0\.1:11435\/v1$/m);
+  assert.match(sel.log("ollama"), /^OLLAMA_HOST=http:\/\/127\.0\.0\.1:11435$/m);
+  assert.deepEqual(sel.calls(), ["coding m"]);
+});
+
+test("delegate --backend ollama asks the selector even with ollama disabled", () => {
+  const { env, runWith } = setup();
+  const sel = withSelector(env, "echo 127.0.0.1:11435", { enabled: false });
+  const r = runWith(sel.extra, "delegate", "--backend", "ollama", "--mode", "read", "--wait", "--", "hi");
+  assert.equal(r.code, 0, r.err);
+  assert.deepEqual(sel.calls(), ["coding m"]);
+  assert.match(sel.log("codex"), /11435\/v1/);
+});
+
+test("a selector refusal stops delegate --backend ollama before a job exists", () => {
+  const { env, runWith } = setup();
+  const sel = withSelector(env, "echo busy >&2; exit 1");
+  const r = runWith(sel.extra, "delegate", "--backend", "ollama", "--mode", "read", "--", "hi");
+  assert.equal(r.code, 1);
+  assert.match(r.err, /busy/);
+  assert.equal(runWith(sel.extra, "status").out, "no jobs");
+});
+
+test("delegate --backend codex does not ask the selector", () => {
+  const { env, runWith } = setup();
+  const sel = withSelector(env, "echo 127.0.0.1:11435");
+  assert.equal(runWith(sel.extra, "delegate", "--backend", "codex", "--mode", "read", "--wait", "--", "hi").code, 0);
+  assert.deepEqual(sel.calls(), []);
+});
+
+test("without OLLAMA_CODING_MODEL the selector is not asked", () => {
+  const { env, runWith } = setup();
+  const sel = withSelector(env, "echo 127.0.0.1:11435");
+  const r = runWith({ ...sel.extra, OLLAMA_CODING_MODEL: "" }, "delegate", "--backend", "ollama", "--mode", "read", "--", "hi");
+  assert.notEqual(r.code, 0);
+  assert.match(r.err, /OLLAMA_CODING_MODEL not set/);
+  assert.deepEqual(sel.calls(), []);
+});
+
+test("route names the selected server and counts it as idle", () => {
+  const { env, runWith } = setup();
+  const sel = withSelector(env, "echo 127.0.0.1:11435");
+  const usage = JSON.stringify([
+    { provider: "codex", usage: { primary: { usedPercent: 10, windowMinutes: 300 }, secondary: { usedPercent: 6, windowMinutes: 10080 } } },
+    { provider: "claude", usage: { primary: { usedPercent: 0, windowMinutes: 300 }, secondary: { usedPercent: 10, windowMinutes: 10080 } } }
+  ]);
+  const r = runWith({ ...sel.extra, FAKE_CODEXBAR_JSON: usage }, "route");
+  assert.equal(r.code, 0, r.err);
+  const [first, second] = r.out.split("\n");
+  assert.match(first, /^→ ollama \(ollama http:\/\/127\.0\.0\.1:11435, selected/);
+  assert.match(second, /GPU idle/);
+});
