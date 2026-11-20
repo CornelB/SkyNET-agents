@@ -144,3 +144,24 @@ test("per-token openrouter ranks last", () => {
   assert.equal(route([codex(80, 6)], cfg({ agy: off, ollama: off, openrouter })).backend, "codex");
   assert.equal(route([], cfg({ codex: off, agy: off, ollama: off, openrouter })).backend, "openrouter");
 });
+
+test("a selected server puts ollama first and names the server", () => {
+  const r = route([codex(10, 6), agy(10)], cfg(), undefined, { host: "http://127.0.0.1:11435" });
+  assert.equal(r.backend, "ollama");
+  assert.match(r.line, /^→ ollama \(ollama http:\/\/127\.0\.0\.1:11435, selected,/);
+});
+
+test("the default server answer also puts ollama first", () => {
+  const r = route([codex(10, 6), agy(10)], cfg(), undefined, { host: null });
+  assert.equal(r.backend, "ollama");
+  assert.match(r.line, /^→ ollama \(ollama default server, selected,/);
+});
+
+test("a selector refusal takes ollama out of routing with the reason", () => {
+  const r = route([codex(10, 6)], cfg({ agy: off }), undefined, { refused: "busy" });
+  assert.equal(r.backend, "codex");
+  assert.match(r.line, /ollama skipped, busy\)$/);
+  const none = route([codex(95, 6)], cfg({ agy: off }), undefined, { refused: "busy" });
+  assert.equal(none.backend, null);
+  assert.match(none.line, /^no backend: .*ollama skipped, busy$/);
+});

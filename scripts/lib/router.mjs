@@ -36,7 +36,14 @@ function isFull(backend, w) {
 
 // -> {backend, available, tier, room, status}
 // gpu: readGpu() output, or undefined when not read. An idle GPU puts ollama ahead of every cloud backend.
-function assess(backend, usage, cfg, gpu) {
+// selection: the OLLAMA_SELECTOR answer, or undefined without a selector. It replaces the GPU read: the
+// selector judges whether its server is free, and the local card may not be the one that server uses.
+function assess(backend, usage, cfg, gpu, selection) {
+  if (backend === "ollama" && selection) {
+    return selection.refused
+      ? { backend, available: false, status: `ollama skipped, ${selection.refused}` }
+      : { backend, available: true, tier: 0, room: 0, status: `ollama ${selection.host ?? "default server"}, selected` };
+  }
   if (backend === "ollama") {
     if (gpu === undefined) {
       return { backend, available: true, tier: 2, room: 0, status: "ollama local" };
@@ -72,10 +79,10 @@ function assess(backend, usage, cfg, gpu) {
   return { backend, available: true, tier, room: 100 - top.used_percent, status: `${backend} ${top.name} ${Math.round(top.used_percent)}%${label}` };
 }
 
-export function route(usage, config, gpu) {
+export function route(usage, config, gpu, selection) {
   const backends = config.backends ?? {};
   const assessed = ["codex", "agy", "openrouter", "ollama"].map((backend) =>
-    backends[backend]?.enabled ? assess(backend, usage, backends[backend], gpu) : { backend, available: false, disabled: true, status: `${backend} disabled` }
+    backends[backend]?.enabled ? assess(backend, usage, backends[backend], gpu, selection) : { backend, available: false, disabled: true, status: `${backend} disabled` }
   );
   const pick = assessed
     .filter((a) => a.available)
