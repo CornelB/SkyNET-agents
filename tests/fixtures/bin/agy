@@ -1,4 +1,6 @@
 #!/usr/bin/env node
-// Fake agy -p=<prompt>: prints the prompt back.
+// Fake agy -p=<prompt>: prints the prompt back, and appends it to $FAKE_PROMPT_LOG when set.
+import fs from "node:fs";
 const prompt = process.argv.slice(2).find((a) => a.startsWith("-p=")).slice(3);
+if (process.env.FAKE_PROMPT_LOG) fs.appendFileSync(process.env.FAKE_PROMPT_LOG, `${prompt}\n`);
 process.stdout.write(`fake agy: ${prompt.split("\n")[0]}\n`);

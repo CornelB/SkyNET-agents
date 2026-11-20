@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runCommand } from "./process.mjs";
@@ -17,11 +19,21 @@ const AGY_SETTINGS = {
 };
 // Ollama gets its own empty CODEX_HOME (ossHome): the user's codex config, MCP servers, skills
 // and AGENTS.md swamp a local model, which then calls tools that do not exist.
-// OpenRouter runs through opencode. Free endpoints may log prompts, so secrets stay out of reach.
+// A write job's scratch files (helper scripts, test harnesses) go here, never in the work tree:
+// the prompt names it and delegate creates it. codex workspace-write includes the temp dir, agy write
+// settings allow write_file(*), opencode is allowed this prefix only.
+const SCRATCH_PREFIX = path.join(os.tmpdir(), "skynet-job-");
+export function jobScratchDir(jobId) {
+  return `${SCRATCH_PREFIX}${jobId}`;
+}
+
+// OpenRouter runs through opencode. Free endpoints may log prompts, so secrets stay out of reach:
+// outside the tree only the job scratch dirs are open, not the rest of /tmp (other tools' scratch files).
+// The last matching rule wins.
 const OPENCODE_JOB_CONFIG = {
   permission: {
     read: { "*.env": "deny", "*.env.*": "deny", "*.env.example": "allow" },
-    external_directory: "deny",
+    external_directory: { "*": "deny", [`${SCRATCH_PREFIX}*`]: "allow" },
     question: "deny"
   }
 };
@@ -75,7 +87,7 @@ export function buildInvocation(backend, { mode, cwd, promptFile, outFile, promp
     }
     // --standalone: a private server that sees this job's cwd and env, not the background service.
     // --auto approves "ask" rules, so the job config denies what must stay local: .env files, paths
-    // outside the tree, and questions nobody is there to answer.
+    // outside the tree but the job scratch dirs, and questions nobody is there to answer.
     const args = ["run", "--standalone", "-m", `openrouter/${model}`, "--agent", mode === "write" ? "build" : "plan", "--auto", "--", prompt];
     return { cmd: "opencode", args, stdoutFile: outFile, env: { OPENCODE_CONFIG_CONTENT: JSON.stringify(OPENCODE_JOB_CONFIG) } };
   }

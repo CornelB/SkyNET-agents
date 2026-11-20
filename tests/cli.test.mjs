@@ -20,13 +20,15 @@ function setup(extraEnv = {}) {
   git("add", ".");
   git("commit", "-q", "-m", "init");
   // Only named variables reach the CLI: host settings (OLLAMA_CODING_MODEL, SKYNET_SESSION_ID, ...) must not change results.
-  const keep = ["HOME", "TMPDIR", "LANG"].filter((name) => process.env[name] !== undefined);
+  const keep = ["HOME", "LANG"].filter((name) => process.env[name] !== undefined);
   const env = {
     ...Object.fromEntries(keep.map((name) => [name, process.env[name]])),
     PATH: `${path.join(here, "fixtures", "bin")}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
     CLAUDE_PLUGIN_DATA: tmp("skynet-data-"),
     XDG_CONFIG_HOME: tmp("skynet-xdg-"),
     CLAUDE_SCRATCHPAD: tmp("skynet-scratch-"),
+    // Write jobs create their scratch dir under TMPDIR: keep it inside the test.
+    TMPDIR: tmp("skynet-tmp-"),
     ...extraEnv
   };
   const run =(...args) => {
@@ -75,6 +77,25 @@ test("write briefs tell the worker not to commit", () => {
   const job = JSON.parse(run("status", r.out.split(" ")[0], "--json").out);
   assert.match(fs.readFileSync(job.promptFile, "utf8"), /Do not commit/);
 });
+
+// Each backend gets the prompt its own way (stdin, -p=, argument), so check what the worker receives.
+for (const backend of ["codex", "ollama", "agy", "openrouter"]) {
+  test(`${backend} write workers get their own scratch dir outside the work tree`, () => {
+    const { env, run, runWith } = setup();
+    const log = path.join(tmp("skynet-prompt-"), "prompt.log");
+    let extra = { FAKE_PROMPT_LOG: log };
+    if (backend === "ollama") extra = { ...extra, ...withSelector(env, "echo 127.0.0.1:11435").extra };
+    if (backend === "openrouter") assert.equal(run("setup", "--enable", "openrouter").code, 0);
+    const r = runWith(extra, "delegate", "--backend", backend, "--mode", "write", "--wait", "--", "edit");
+    assert.equal(r.code, 0, r.err);
+    const scratch = path.join(env.TMPDIR, `skynet-job-${r.out.split(" ")[0]}`);
+    assert.ok(fs.readFileSync(log, "utf8").includes(`scratch files in ${scratch}, never in the work tree. Change only the files this task asks for.`));
+    assert.ok(fs.statSync(scratch).isDirectory());
+    fs.rmSync(log);
+    assert.equal(runWith(extra, "delegate", "--backend", backend, "--mode", "read", "--wait", "--", "look").code, 0);
+    assert.doesNotMatch(fs.readFileSync(log, "utf8"), /scratch files/);
+  });
+}
 
 test("agy output is captured from stdout", async () => {
   const { run } = setup();

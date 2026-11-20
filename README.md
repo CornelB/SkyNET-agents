@@ -1,6 +1,6 @@
 # skynet
 
-A Claude Code plugin that delegates work to Codex, Antigravity (`agy`), OpenRouter or local Ollama. It picks the backend from live usage (codexbar) and the machine's billing setup, so Claude and Codex quota lasts longer. Workers edit the tree directly; the lead reviews the diff.
+A Claude Code plugin that delegates work to Codex, Antigravity (`agy`), OpenRouter or local Ollama. It picks the backend from live usage (codexbar) and the machine's billing setup, so Claude and Codex quota lasts longer. Workers edit the tree directly and keep their own scratch files in a per-job temp dir (`$TMPDIR/skynet-job-<job id>`), so only the files a brief asks for change; the lead reviews the diff.
 
 ## Needs
 

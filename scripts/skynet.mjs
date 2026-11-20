@@ -7,7 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseArgs } from "./lib/args.mjs";
-import { buildInvocation, ollamaContextWindow } from "./lib/backends.mjs";
+import { buildInvocation, jobScratchDir, ollamaContextWindow } from "./lib/backends.mjs";
 import { configPath, detectBackends, loadConfig, saveConfig } from "./lib/config.mjs";
 import { readStdinIfPiped } from "./lib/fs.mjs";
 import { buildStatusSnapshot, formatElapsedDuration, readStoredJob, resolveCancelableJob, resolveResultJob } from "./lib/job-control.mjs";
@@ -144,10 +144,16 @@ async function routeCommand() {
   return 0;
 }
 
-function composePrompt(brief, { mode, paths }) {
+// The one prompt every backend gets: codex and ollama read it from the prompt file, agy and openrouter as an argument.
+function composePrompt(brief, { mode, paths, scratchDir }) {
   const parts = [brief.trim()];
   if (paths.length) parts.push(`Scope: work only in ${paths.join(", ")}.`);
-  parts.push(mode === "read" ? "Do not edit files." : "Do not commit. Leave your changes uncommitted.");
+  if (mode === "read") {
+    parts.push("Do not edit files.");
+  } else {
+    parts.push("Do not commit. Leave your changes uncommitted.");
+    parts.push(`Put helper scripts, test harnesses and other scratch files in ${scratchDir}, never in the work tree. Change only the files this task asks for.`);
+  }
   parts.push("End with a summary of at most 5 lines.");
   return parts.join("\n\n");
 }
@@ -193,7 +199,8 @@ async function delegate(options, positionals) {
   const jobsDir = resolveJobsDir(workspaceRoot);
   const promptFile = path.join(jobsDir, `${id}.prompt.md`);
   const outFile = path.join(jobsDir, `${id}.out.md`);
-  const prompt = composePrompt(brief, { mode: options.mode, paths: list(options.paths) });
+  const scratchDir = jobScratchDir(id);
+  const prompt = composePrompt(brief, { mode: options.mode, paths: list(options.paths), scratchDir });
   // Fail before creating anything when the invocation cannot be built (e.g. no ollama or openrouter model).
   buildInvocation(backend, { mode: options.mode, cwd: workspaceRoot, promptFile, outFile, prompt, model: modelFor(config, backend, options.mode), ossHome: ossHome() });
   const timeoutS = Number(options["timeout-s"] ?? (config.timeoutMinutes ? config.timeoutMinutes * 60 : DEFAULT_TIMEOUT_S));
@@ -204,6 +211,9 @@ async function delegate(options, positionals) {
     ? createWorkerTree({ repo: workspaceRoot, backend, scratchDir: process.env.CLAUDE_SCRATCHPAD || os.tmpdir(), jobId: id })
     : null;
   fs.writeFileSync(promptFile, prompt);
+  if (options.mode === "write") {
+    fs.mkdirSync(scratchDir, { recursive: true });
+  }
 
   const job = createJobRecord({
     id,

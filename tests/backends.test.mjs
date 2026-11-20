@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
-import { buildInvocation, ollamaContextWindow } from "../scripts/lib/backends.mjs";
+import { buildInvocation, jobScratchDir, ollamaContextWindow } from "../scripts/lib/backends.mjs";
 
 const io = { cwd: "/repo", promptFile: "/jobs/p.md", outFile: "/jobs/out.md", prompt: "do it" };
 
@@ -94,7 +96,11 @@ test("openrouter runs through opencode with a job permission config", () => {
   assert.equal(inv.stdoutFile, "/jobs/out.md");
   const { permission } = JSON.parse(inv.env.OPENCODE_CONFIG_CONTENT);
   assert.equal(permission.read["*.env"], "deny");
-  assert.equal(permission.external_directory, "deny");
+  assert.deepEqual(permission.external_directory, { "*": "deny", [`${path.join(os.tmpdir(), "skynet-job-")}*`]: "allow" });
+});
+
+test("a job's scratch dir sits under the temp dir", () => {
+  assert.equal(jobScratchDir("dlg-1"), path.join(os.tmpdir(), "skynet-job-dlg-1"));
 });
 
 test("openrouter read uses the plan agent", () => {

@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 // Fake opencode run: prints the -m model to stdout. FAKE_RATE_LIMIT=1 fails every model but the free router with a 429.
+// Appends the prompt (the argument after --) to $FAKE_PROMPT_LOG when set.
+import fs from "node:fs";
 const args = process.argv.slice(2);
 const model = args[args.indexOf("-m") + 1];
+if (process.env.FAKE_PROMPT_LOG) fs.appendFileSync(process.env.FAKE_PROMPT_LOG, `${args[args.indexOf("--") + 1]}\n`);
 if (process.env.FAKE_RATE_LIMIT && model !== "openrouter/openrouter/free") {
   process.stderr.write("Error: 429 rate limited upstream\n");
   process.exit(1);
