@@ -68,7 +68,8 @@ function assessBackend(name, tier, input) {
   let modelInfo = {};
   const answer = (available, status, extra = {}) => ({
     step: name, tier, available, ...modelInfo, ...extra,
-    status: `${status}${modelInfo.note ? `, ${modelInfo.note}` : ""}`
+    // The model note explains a pick; a skipped step's status is its skip reason alone.
+    status: `${status}${available && modelInfo.note ? `, ${modelInfo.note}` : ""}`
   });
   if (!forced && not.includes(name)) return answer(false, `${name} excluded`);
   if (name === "ollama" && !ollama.model) return answer(false, "ollama skipped, no model set");

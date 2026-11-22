@@ -94,13 +94,13 @@ test("a backend pick returns resolved fields and evaluates nothing after the pic
   assert.deepEqual(calls, [["codex", "sonnet"]]);
 });
 
-test("the pick's status comes first, followed only by visited skips and resolver notes", () => {
+test("the pick's status comes first, followed by visited skips without their model notes", () => {
   const r = ask({
     config: config({ codex: backend(), agy: backend() }), usage: [codex(95, 6), agy(99)],
     resolve(name, tier) { return { ...resolved(name, tier), note: "model list unreadable" }; }
   });
   assert.equal(r.step, "claude");
-  assert.equal(r.line, "→ claude sonnet (claude usage unknown, codex 5h 95% full until 03 Jan 11:41, model list unreadable, agy pool 1 99% full until 03 Jan 11:41, model list unreadable)");
+  assert.equal(r.line, "→ claude sonnet (claude usage unknown, codex 5h 95% full until 03 Jan 11:41, agy pool 1 99% full until 03 Jan 11:41)");
 });
 
 test("CLI own models and resolver notes print without inventing a model", () => {

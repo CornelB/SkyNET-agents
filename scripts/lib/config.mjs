@@ -12,7 +12,8 @@ export function configPath(env = process.env) {
 export function loadConfig(env = process.env) {
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath(env), "utf8"));
-    return { backends: parsed.backends ?? {} };
+    // Every saved key is kept (timeoutMinutes, tier maps): setup rewrites the file from what it loaded.
+    return { ...parsed, backends: parsed.backends ?? {} };
   } catch {
     return { backends: {} };
   }
