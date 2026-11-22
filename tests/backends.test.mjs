@@ -20,6 +20,18 @@ test("codex read", () => {
   assert.deepEqual(buildInvocation("codex", { ...io, mode: "read" }).args, ["exec", "--skip-git-repo-check", "-C", "/repo", "-s", "read-only", "-o", "/jobs/out.md", "-"]);
 });
 
+test("codex with a mapped model passes the model and the effort override", () => {
+  const args = buildInvocation("codex", { ...io, mode: "read", model: "acme-2-big", effort: "high" }).args;
+  assert.deepEqual(args.slice(-5), ["-m", "acme-2-big", "-c", "model_reasoning_effort=high", "-"]);
+  assert.deepEqual(buildInvocation("codex", { ...io, mode: "read", model: "acme-2-big" }).args.slice(-3), ["-m", "acme-2-big", "-"]);
+});
+
+test("agy with a mapped model passes --model, and nothing without one", () => {
+  const mapped = buildInvocation("agy", { ...io, mode: "read", model: "acme-3-big-high" }).args;
+  assert.deepEqual(mapped.slice(-3), ["--model", "acme-3-big-high", "-p=do it"]);
+  assert.equal(buildInvocation("agy", { ...io, mode: "read" }).args.includes("--model"), false);
+});
+
 test("ollama runs through codex --oss", () => {
   assert.deepEqual(buildInvocation("ollama", { ...io, mode: "write", model: "qwen3.6:35b-a3b-coding-mtp-q4_K_M", ossHome: "/data/oss" }), {
     cmd: "codex",

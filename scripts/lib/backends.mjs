@@ -8,7 +8,8 @@ import { ollamaHostEnv } from "./selector.mjs";
 // argv for each backend. Ollama runs through codex --oss so it gets codex's harness and sandbox.
 // agy takes the prompt as -p=<text> (it does not read stdin; the = keeps a leading "-" from reading as a flag).
 // agy runs with --sandbox (read-only shell, no network) and this plugin's own permissions file per mode
-// (--settings replaces the user's agy permissions for that run; model and project still come from the user's file).
+// (--settings replaces the user's agy permissions for that run; the project, and the model when no tier map names one,
+// still come from the user's file).
 // Read jobs: read files only, the rest denied. Write jobs: read, write and shell; URL reads and MCP denied.
 // A tool with no rule ends a headless run with no output, so leaving the sandbox (no rule) ends a write job.
 // Never deny unsandboxed(*) in the write file: that rule also denies every sandboxed shell command.
@@ -56,7 +57,7 @@ export function ollamaContextWindow(model, { run = runCommand, env = process.env
 // contextWindow (ollama): codex assumes 272k for a model it does not know and never compacts before
 // ollama rejects the request. With the served window it compacts at 3/4 of it: codex's own 9/10 leaves
 // too little room for a step's tool outputs plus the compaction request.
-export function buildInvocation(backend, { mode, cwd, promptFile, outFile, prompt, model, ossHome, contextWindow, ollamaHost }) {
+export function buildInvocation(backend, { mode, cwd, promptFile, outFile, prompt, model, effort, ossHome, contextWindow, ollamaHost }) {
   if (backend === "codex" || backend === "ollama") {
     const args = ["exec", "--skip-git-repo-check", "-C", cwd, "-s", mode === "write" ? "workspace-write" : "read-only", "-o", outFile];
     if (backend === "ollama") {
@@ -74,11 +75,16 @@ export function buildInvocation(backend, { mode, cwd, promptFile, outFile, promp
       }
       return { cmd: "codex", args: [...args, "-"], stdinFile: promptFile, env: { CODEX_HOME: ossHome, ...ollamaHostEnv(ollamaHost) } };
     }
+    // A tier map picks the model and effort; without one the CLI's own config decides.
+    if (model) args.push("-m", model);
+    if (effort) args.push("-c", `model_reasoning_effort=${effort}`);
     return { cmd: "codex", args: [...args, "-"], stdinFile: promptFile };
   }
   if (backend === "agy") {
     const write = mode === "write";
     const args = ["--output-format", "text", ...(write ? ["--mode", "accept-edits"] : []), "--print-timeout", "0s", "--sandbox", "--settings", AGY_SETTINGS[write ? "write" : "read"]];
+    // The effort is part of an agy slug. Without a model the user's agy settings file decides.
+    if (model) args.push("--model", model);
     return { cmd: "agy", args: [...args, `-p=${prompt}`], stdoutFile: outFile };
   }
   if (backend === "openrouter") {
