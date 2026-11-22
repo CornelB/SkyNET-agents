@@ -2,6 +2,15 @@
 export function parseArgs(argv, config = {}) {
   const valueOptions = new Set(config.valueOptions ?? []);
   const booleanOptions = new Set(config.booleanOptions ?? []);
+  // A list option may repeat; every value is kept, in order.
+  const listOptions = new Set(config.listOptions ?? []);
+  const setValue = (key, value) => {
+    if (listOptions.has(key)) {
+      (options[key] ??= []).push(value);
+    } else {
+      options[key] = value;
+    }
+  };
   const aliasMap = config.aliasMap ?? {};
   const options = {};
   const positionals = [];
@@ -34,12 +43,12 @@ export function parseArgs(argv, config = {}) {
         continue;
       }
 
-      if (valueOptions.has(key)) {
+      if (valueOptions.has(key) || listOptions.has(key)) {
         const nextValue = inlineValue ?? argv[index + 1];
         if (nextValue === undefined) {
           throw new Error(`Missing value for --${rawKey}`);
         }
-        options[key] = nextValue;
+        setValue(key, nextValue);
         if (inlineValue === undefined) {
           index += 1;
         }
@@ -58,12 +67,12 @@ export function parseArgs(argv, config = {}) {
       continue;
     }
 
-    if (valueOptions.has(key)) {
+    if (valueOptions.has(key) || listOptions.has(key)) {
       const nextValue = argv[index + 1];
       if (nextValue === undefined) {
         throw new Error(`Missing value for -${shortKey}`);
       }
-      options[key] = nextValue;
+      setValue(key, nextValue);
       index += 1;
       continue;
     }
