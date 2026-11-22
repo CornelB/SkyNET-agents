@@ -39,6 +39,47 @@ Then run `/skynet:setup`.
 
 Configuration and routing rules: [docs/reference/configuration.md](docs/reference/configuration.md).
 
+## Tiers
+
+A job asks for a tier, named after the Claude families. Each backend serves a tier with the model its configuration maps to that tier. A suggested map, by family (skynet runs the newest version of a family):
+
+|                  | Haiku | Sonnet | Opus | Fable |
+|------------------|-------|--------|------|-------|
+| Claude           | Haiku | Sonnet | Opus | Fable |
+| OpenAI (`codex`) | Luna  | Terra  | Sol  | Astra |
+| Google (`agy`)   | Flash | Hydrogen | Neon | Neon, then Carbon |
+| Ollama           | -     | -      | -    | -     |
+
+Ollama's model varies per setup: it serves the tier `OLLAMA_CODING_MODEL_TIER` declares, and every tier below it.
+
+The map is the user's configuration, not a fact of the plugin: a backend serves a job when it has a model of the job's tier or a higher one.
+
+## Funnels
+
+Each job walks the funnel of its role and takes the first step that serves its tier and is not skipped. A step is skipped when its weekly window is above 80% or its 5h window is at 90% or more; a per-token backend is never skipped on quota.
+
+```mermaid
+flowchart LR
+  subgraph write
+    direction LR
+    W1[local backend] --> W2[subscription backend] --> W3[Claude subagent] --> W4[per-token backend]
+  end
+  subgraph read
+    direction LR
+    R1[subscription backend] --> R2[Claude subagent] --> R3[per-token backend]
+  end
+  subgraph advisor
+    direction LR
+    A1[Claude Fable] --> A2[Claude Opus] --> A3[subscription backend] --> A4[per-token backend]
+  end
+```
+
+- A local backend takes write jobs only, when its server is free.
+- A write job that must run builds or tests skips a backend whose shell is read-only.
+- The advisor asks for the Fable tier; Claude Fable is skipped when its own weekly window is above 80%.
+
+Design: [docs/specs/2026-11-22-tiered-funnels.md](docs/specs/2026-11-22-tiered-funnels.md). Until it is implemented, routing follows [docs/reference/configuration.md](docs/reference/configuration.md).
+
 ## License
 
 MIT. Parts of `scripts/lib/` derive from [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc) (Apache-2.0); see [NOTICE](NOTICE).
