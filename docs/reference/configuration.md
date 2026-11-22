@@ -5,7 +5,8 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 ```json
 {
   "backends": {
-    "codex":  { "enabled": true,  "billing": "subscription" },
+    "codex":  { "enabled": true,  "billing": "subscription", "maxParallel": 2,
+                "tiers": { "<tier>": ["<family>@<effort>", "<family>"] } },
     "agy":    { "enabled": true,  "billing": "subscription", "window": "Gemini Models" },
     "openrouter": {
       "enabled": false,
@@ -25,7 +26,9 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 | `backends.openrouter.models.coding` | an openrouter.ai model id | `poolside/laguna-s-2.1:free` | Model for write jobs. |
 | `backends.openrouter.models.decision` | an openrouter.ai model id | `nvidia/nemotron-3.5-lightning:free` | Small, fast classifier model. Saved only; no job uses it yet. |
 | `backends.openrouter.models.fallback` | an openrouter.ai model id | `openrouter/free` | A job that fails with a rate limit (`429`, "rate limit") retries once on this model. The free router picks a random free model per request. |
-| `backends.agy.window` | a codexbar window name | none: the highest agy window | The Antigravity usage window that counts for routing. |
+| `backends.agy.window` | a codexbar window name | none: every agy window | The Antigravity usage window that counts for routing. |
+| `backends.<name>.tiers` | per tier (`haiku`, `sonnet`, `opus`, `fable`), an ordered list of `<family>` or `<family>@<effort>` | none | Which model serves which tier; see [Tiers](#tiers). `setup --map` writes it. |
+| `backends.<name>.maxParallel` | a positive integer | `1` for `local` billing, else `2` | Jobs of this backend that may run at once, counted in every workspace. A backend at its limit is skipped; there is no queue. `setup --max-parallel` writes it. |
 
 | `timeoutMinutes` | minutes | `60` | A job still running after this is killed and recorded as failed (`timed out`). `delegate --timeout-s` overrides it per job. |
 
@@ -39,7 +42,7 @@ Every write job gets a scratch dir, `$TMPDIR/skynet-job-<job id>` (`/tmp` when `
 
 Ollama jobs run codex with its own empty `CODEX_HOME` (`<job state root>/codex-oss-home`), so the user's codex config, MCP servers, skills and `AGENTS.md` do not reach the local model.
 
-agy jobs run `agy --sandbox --settings <file>`. The file is this plugin's own: `scripts/agy-settings-read.json` for read jobs, `scripts/agy-settings-write.json` for write jobs. It replaces the permissions in `~/.gemini/antigravity-cli/settings.json` for that run only; model and project still come from that file, which skynet never writes. Read jobs may only read files; writes, shell, URL reads, MCP and leaving the sandbox are denied. Write jobs may read, write and run shell commands with `--mode accept-edits`; URL reads and MCP are denied, and a request to leave the sandbox ends the job (a `deny` rule for `unsandboxed` would also deny every sandboxed shell command). The sandbox shell is read-only and has no network, so builds and tests that write files fail: give those jobs to codex. agy's `search_web` tool cannot be turned off.
+agy jobs run `agy --sandbox --settings <file>`. The file is this plugin's own: `scripts/agy-settings-read.json` for read jobs, `scripts/agy-settings-write.json` for write jobs. It replaces the permissions in `~/.gemini/antigravity-cli/settings.json` for that run only; the project, and the model when no tier map names one, still come from that file, which skynet never writes. Read jobs may only read files; writes, shell, URL reads, MCP and leaving the sandbox are denied. Write jobs may read, write and run shell commands with `--mode accept-edits`; URL reads and MCP are denied, and a request to leave the sandbox ends the job (a `deny` rule for `unsandboxed` would also deny every sandboxed shell command). The sandbox shell is read-only and has no network, so builds and tests that write files fail: start those jobs with `--needs-shell`, which skips agy. agy's `search_web` tool cannot be turned off.
 
 OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for write and `--agent plan` for read. `opencode` reads `OPENROUTER_API_KEY` from the environment. Each job sets `OPENCODE_CONFIG_CONTENT` to deny reads of `.env` files, paths outside the job's tree other than the job scratch dirs (`$TMPDIR/skynet-job-*`, below), and questions. Free OpenRouter endpoints can log prompts, so the brief and the files the model reads leave the machine. opencode has no sandbox: a write job runs shell commands as the user. A write job's fallback retry starts from the tree the first attempt left, partial edits included.
 
@@ -50,18 +53,73 @@ OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for
 | `CLAUDE_PLUGIN_DATA` | Job state root. Default: `<tmpdir>/skynet`. |
 | `CLAUDE_SCRATCHPAD` | Where `--parallel` worktrees go. Default: the system temp dir. |
 | `OLLAMA_CODING_MODEL` | An `ollama list` name. The model that ollama jobs run (`codex exec --oss --local-provider ollama -c model_provider=ollama -m <model>`) and that the GPU-idle `ollama ps` check looks for. Required for ollama jobs. Set it in the `env` block of Claude Code `settings.json`. |
+| `OLLAMA_CODING_MODEL_TIER` | The tier of `OLLAMA_CODING_MODEL`: `haiku`, `sonnet`, `opus` or `fable`. Ollama takes jobs of that tier and of every tier below it. Unset: ollama takes no job (`ollama skipped, no tier declared`). |
 | `OLLAMA_SELECTOR` | Optional. The absolute path of an executable that picks the Ollama server for each ollama job; see [Ollama selector](#ollama-selector). Set it in the `env` block of Claude Code `settings.json`. Unset: the default server. |
 | `SKYNET_SESSION_ID` | When set, `status`, `result` and `cancel` without a job id see only this session's jobs. |
 
+## Tiers
+
+A job asks for a tier: `haiku`, `sonnet`, `opus` or `fable`, in rising order. `delegate --tier` is required.
+
+- A backend with no `tiers` key serves every tier on its CLI's own model (`model unmapped` in its status).
+- A backend with a `tiers` key serves a job when the map has an entry for the job's tier or for a higher one; the lowest such tier is used.
+- Ollama serves the tier `OLLAMA_CODING_MODEL_TIER` declares and every tier below it.
+- OpenRouter is in a funnel only with a `tiers` key; its entries are exact model ids. Without one it runs only by `--backend openrouter`, on `models.coding` or `models.reasoning`.
+
+An entry names a family, not a version. codex and agy entries resolve at run time to the newest version the backend lists:
+
+| Backend | List | Effort |
+|---------|------|--------|
+| codex | `models[].slug` of `$CODEX_HOME/models_cache.json` (default `~/.codex`), without hidden models | passed as `-c model_reasoning_effort=<effort>`; optional |
+| agy | `agy models`, 10 seconds at most | the last part of the slug; an entry must name it |
+
+A slug is split on `-`; the part that is a number (`6`, `6.2`) is its version, and the family must appear as consecutive parts. Entries of a tier are tried in order. When the list cannot be read, the slug the entry last resolved to runs (kept in `<state root>/resolved-models.json`), else the CLI's own model; the status says `model list unreadable`.
+
 ## Routing
 
-| Rule | Value |
+A job walks the funnel of its role and takes the first step that is enabled, serves the tier and is not skipped. The kind of a backend is its `billing`.
+
+| Role | Order |
 |------|-------|
-| Full | 5h at 90% or more; week or model window at 95% or more |
-| Near full | any counted window at 75% or more |
-| Order | subscription with room (most room first), free openrouter, ollama, subscription near full, per-token |
-| GPU idle | ollama enabled and, with `OLLAMA_SELECTOR` set, any selector answer other than a refusal (a refusal takes ollama out of routing); without a selector, the amdgpu card with the most VRAM under 20% busy with under half its VRAM in use, or `ollama ps` lists `OLLAMA_CODING_MODEL`. Ollama then ranks first. No amdgpu card: the order above applies. |
-| Hand-off level (Claude week) | below 70%: what was named; 70% or more: any part a worker can do alone; 90% or more: everything but orchestration and diff review. GPU idle raises "what was named" to "any part a worker can do alone". |
+| `write` | local, free, subscription (most room first), calling session, per-token |
+| `read` | free, subscription (most room first), calling session, per-token |
+| `advisor` | calling session at `fable`, calling session at `opus`, subscription, per-token |
+
+The calling session is `claude` in Claude Code (`CLAUDECODE` set) and `self` elsewhere. When it is picked, `delegate` starts no job, prints `→ claude <tier> (...)` and exits 4: the caller runs the piece. When every step of `write` or `read` is skipped, the calling session is the answer.
+
+A step is skipped by the first of these that holds:
+
+| # | Applies to | Skipped when | Status |
+|---|-----------|--------------|--------|
+| 1 | a backend | named in `--not` | `<backend> excluded` |
+| 2 | ollama | `OLLAMA_CODING_MODEL` unset | `ollama skipped, no model set` |
+| 3 | a backend | it does not serve the tier | `<backend> no <tier> model`, `ollama skipped, no tier declared` |
+| 4 | a backend | `--needs-shell`, and its job shell cannot write (agy) | `<backend> shell read-only` |
+| 5 | a backend | it has `maxParallel` jobs running | `<backend> at limit (<n> running)` |
+| 6 | subscription | a counted window is full | `<backend> <window> <n>% full until <reset>` |
+| 7 | ollama, `OLLAMA_SELECTOR` set | the selector refuses | `ollama skipped, <reason>` |
+| 8 | ollama, no selector | the amdgpu card is not idle | `ollama local, <gpu>, busy` |
+| 9 | calling session | Claude's `week` or `5h` window is full | `claude <window> <n>%` |
+| 10 | calling session at tier T | a Claude window named `<T> only` is above 80% | `claude <window> <n>%` |
+
+- Full: a window of 300 minutes or less at 90% or more; any other window above 80%.
+- Counted windows: `5h` and `week` for codex; for another backend the window `backends.<name>.window` names, else all of them.
+- Usage that cannot be read skips nothing (`<backend> usage unknown`). A per-token backend is never skipped on quota.
+- GPU idle: the amdgpu card with the most VRAM under 20% busy with under half its VRAM in use, or `ollama ps` lists `OLLAMA_CODING_MODEL`. A machine without an amdgpu card has no reading, and ollama is available.
+- `--backend <name>` forces one backend. It skips the enabled flag and rules 1, 6 and 8, and keeps rules 2, 3, 4, 5 and 7.
+
+Hand-off level: how much of the current task leaves the session. `route` without flags prints it.
+
+| Source | Level |
+|--------|-------|
+| Claude week below 70% | what was named |
+| Claude week 70% or more | any part a worker can do alone |
+| Claude week 90% or more | everything but orchestration and diff review |
+| ollama idle, or its selector answers | at least "any part a worker can do alone" |
+| a subscription backend that is not full has a weekly window at 80% or less | at least "any part a worker can do alone" |
+| a subscription backend that is not full has a weekly window with more than 30% left that resets within 2 days | everything but orchestration and diff review |
+
+The highest level wins. Design: [the spec](../specs/2026-11-22-tiered-funnels.md).
 
 ## Ollama selector
 

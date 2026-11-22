@@ -41,7 +41,7 @@ Configuration and routing rules: [docs/reference/configuration.md](docs/referenc
 
 ## Tiers
 
-A job asks for a tier, named after the Claude families. Each backend serves a tier with the model its configuration maps to that tier. A suggested map, by family (skynet runs the newest version of a family):
+A job asks for a tier (`delegate --tier`), named after the Claude families. Each backend serves a tier with the model its configuration maps to that tier (`setup --map`); a backend without a map serves every tier on its CLI's own model. A suggested map, by family (skynet runs the newest version of a family):
 
 |                  | Haiku | Sonnet | Opus | Fable |
 |------------------|-------|--------|------|-------|
@@ -56,7 +56,7 @@ The map is the user's configuration, not a fact of the plugin: a backend serves 
 
 ## Funnels
 
-Each job walks the funnel of its role and takes the first step that serves its tier and is not skipped. A step is skipped when its weekly window is above 80% or its 5h window is at 90% or more; a per-token backend is never skipped on quota.
+Each job walks the funnel of its role and takes the first step that serves its tier and is not skipped. A step is skipped when its weekly window is above 80% or its 5h window is at 90% or more; a per-token backend is never skipped on quota. A backend that already runs its limit of jobs (two by default, one for a local backend) is skipped too. When the Claude subagent step is the answer, skynet starts no job and the session runs the piece itself.
 
 ```mermaid
 flowchart LR
@@ -78,7 +78,7 @@ flowchart LR
 - A write job that must run builds or tests skips a backend whose shell is read-only.
 - The advisor asks for the Fable tier; Claude Fable is skipped when its own weekly window is above 80%.
 
-Design: [docs/specs/2026-11-22-tiered-funnels.md](docs/specs/2026-11-22-tiered-funnels.md). Until it is implemented, routing follows [docs/reference/configuration.md](docs/reference/configuration.md).
+Every rule and status line: [docs/reference/configuration.md](docs/reference/configuration.md). Design: [docs/specs/2026-11-22-tiered-funnels.md](docs/specs/2026-11-22-tiered-funnels.md).
 
 ## License
 

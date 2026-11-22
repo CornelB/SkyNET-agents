@@ -45,18 +45,18 @@ Example: "how much claude usage is left?" names one provider. The command is `py
 The script prints one line per provider. Each line is one of these 3 kinds:
 
 1. A usage line, for example `claude 5h 12% (resets 14:00) · week 82% ...`. The percent is the part of the limit that is used.
-2. An error line, for example `grok error: ...`. The usage is unknown. The provider itself can still work: `skynet route` ranks such a backend after ollama.
+2. An error line, for example `grok error: ...`. The usage is unknown. The provider itself can still work: `skynet route` keeps such a backend available.
 3. A `no usage data` line. The usage is unknown, same as an error line.
 
 ## Step 4: Decide
 
 Do this step only before a delegation. If the user only asked for the usage, go to Output.
 
-Check the usage line of the provider that gets the delegation. "90% or more" includes 90%. Example: `Fable only 95%` is 95% or more, so the Fable model is full.
+Check the usage line of the provider that gets the delegation. "90% or more" includes 90%; "above 80%" does not include 80%. Example: `Fable only 85%` is above 80%, so the Fable model is full.
 
 1. If the 5h value is 90% or more, the provider is full until the 5h reset time.
-2. If the week value is 95% or more, the provider is full until the week reset time.
-3. If the delegation uses a model that has a model window, and that model window is 95% or more, the provider is full for that model.
+2. If the week value is above 80%, the provider is full until the week reset time.
+3. If the delegation uses a model that has a model window, and that model window is above 80%, the provider is full for that model.
 4. If the provider is not full, continue with the delegation.
 5. If the provider is full and another provider can do the same task and is not full, tell the user. Then send the delegation to the other provider.
 6. If the provider is full and no other provider can do the task, do not delegate. Tell the user the reset time. Stop.
