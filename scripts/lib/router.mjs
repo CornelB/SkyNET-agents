@@ -1,97 +1,157 @@
-// Picks a delegation backend from codexbar usage and the machine config.
-// Thresholds come from the usage skill (full) and the spec (near full).
 import { describeGpu, gpuIdle } from "./gpu.mjs";
 
-const FULL_5H = 90;
-const FULL_WEEK = 95;
-const FULL_MODEL = 95;
-const NEAR = 75;
+const BACKENDS = ["codex", "agy", "openrouter", "ollama"];
+const TIERS = ["haiku", "sonnet", "opus", "fable"];
+const PROVIDERS = { agy: "antigravity" };
 
-const CLOUD = { codex: "codex", agy: "antigravity" };
-
-function resetTime(iso) {
-  const date = new Date(iso ?? "");
-  if (Number.isNaN(date.getTime())) {
-    return "?";
-  }
-  const time = date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
-  const sameDay = date.toDateString() === new Date().toDateString();
-  return sameDay ? time : `${date.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })} ${time}`;
+function windowsFor(usage, backend) {
+  const entry = usage.find((item) => item.provider === (PROVIDERS[backend] ?? backend));
+  return entry && !entry.error
+    ? (entry.windows ?? []).filter((w) => Number.isFinite(w.used_percent))
+    : [];
 }
 
-function relevantWindows(backend, entry, cfg) {
-  const windows = (entry.windows ?? []).filter((w) => typeof w.used_percent === "number");
-  if (backend === "codex") {
+function countedWindows(usage, backend, cfg) {
+  const windows = windowsFor(usage, backend);
+  if (backend === "codex" || backend === "claude") {
     return windows.filter((w) => w.name === "5h" || w.name === "week");
   }
   return cfg.window ? windows.filter((w) => w.name === cfg.window) : windows;
 }
 
-function isFull(backend, w) {
-  if (backend === "codex") {
-    return w.used_percent >= (w.name === "5h" ? FULL_5H : FULL_WEEK);
-  }
-  return w.used_percent >= FULL_MODEL;
+function full(w) {
+  return w.window_minutes <= 300 ? w.used_percent >= 90 : w.used_percent > 80;
 }
 
-// -> {backend, available, tier, room, status}
-// gpu: readGpu() output, or undefined when not read. An idle GPU puts ollama ahead of every cloud backend.
-// selection: the OLLAMA_SELECTOR answer, or undefined without a selector. It replaces the GPU read: the
-// selector judges whether its server is free, and the local card may not be the one that server uses.
-function assess(backend, usage, cfg, gpu, selection) {
-  if (backend === "ollama" && selection) {
-    return selection.refused
-      ? { backend, available: false, status: `ollama skipped, ${selection.refused}` }
-      : { backend, available: true, tier: 0, room: 0, status: `ollama ${selection.host ?? "default server"}, selected` };
+function fullest(windows) {
+  return windows.reduce((top, w) => !top || w.used_percent > top.used_percent ? w : top, null);
+}
+
+function windowStatus(backend, w) {
+  return `${backend} ${w.name} ${Math.round(w.used_percent)}%`;
+}
+
+// Always include the date in UTC: routing has no implicit clock or local timezone.
+function resetTime(iso) {
+  const date = new Date(iso ?? "");
+  if (Number.isNaN(date.getTime())) return "?";
+  const day = date.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+  return `${day} ${date.toISOString().slice(11, 16)}`;
+}
+
+function funnel(role, tier, usage, backends, inClaude) {
+  const eligible = BACKENDS.filter((name) => backends[name]?.enabled &&
+    (name !== "openrouter" || Object.hasOwn(backends[name], "tiers")));
+  const group = (billing) => eligible.filter((name) => backends[name].billing === billing)
+    .map((name) => ({ step: name, tier }));
+  // Sorting needs quota data only; resolving models belongs to the walk.
+  const subscriptions = group("subscription").map((step) => ({
+    ...step, top: fullest(countedWindows(usage, step.step, backends[step.step]))
+  })).sort((a, b) => Number(Boolean(b.top)) - Number(Boolean(a.top)) ||
+    (a.top && b.top ? a.top.used_percent - b.top.used_percent : 0));
+  const session = { step: inClaude ? "claude" : "self", tier };
+  if (role === "advisor") {
+    return [
+      ...(inClaude ? [session, { step: "claude", tier: "opus" }] : []),
+      ...subscriptions, ...group("per-token")
+    ];
   }
-  if (backend === "ollama") {
-    if (gpu === undefined) {
-      return { backend, available: true, tier: 2, room: 0, status: "ollama local" };
+  return [
+    ...(role === "write" ? group("local") : []),
+    ...group("free"), ...subscriptions, session, ...group("per-token")
+  ];
+}
+
+function assessBackend(name, tier, input) {
+  const { usage, config, needsShell, not, forced, running, ollama, resolve } = input;
+  const cfg = config.backends?.[name] ?? {};
+  let modelInfo = {};
+  const answer = (available, status, extra = {}) => ({
+    step: name, tier, available, ...modelInfo, ...extra,
+    status: `${status}${modelInfo.note ? `, ${modelInfo.note}` : ""}`
+  });
+  if (!forced && not.includes(name)) return answer(false, `${name} excluded`);
+  if (name === "ollama" && !ollama.model) return answer(false, "ollama skipped, no model set");
+
+  if (name === "ollama") {
+    const declared = TIERS.indexOf(ollama.tier);
+    if (declared < 0) return answer(false, "ollama skipped, no tier declared");
+    if (TIERS.indexOf(tier) > declared) return answer(false, `ollama no ${tier} model`);
+    modelInfo = { model: ollama.model };
+  } else {
+    modelInfo = resolve(name, tier);
+    if (!modelInfo.serves) return answer(false, `${name} no ${tier} model`);
+  }
+  if (needsShell && name === "agy") return answer(false, "agy shell read-only");
+  const count = running[name] ?? 0;
+  const limit = cfg.maxParallel ?? (cfg.billing === "local" ? 1 : 2);
+  if (count >= limit) return answer(false, `${name} at limit (${count} running)`);
+
+  const windows = cfg.billing === "subscription" ? countedWindows(usage, name, cfg) : [];
+  const blocked = !forced && windows.find(full);
+  if (blocked) return answer(false, `${windowStatus(name, blocked)} full until ${resetTime(blocked.resets_at)}`);
+
+  if (name === "ollama") {
+    const selection = ollama.select?.();
+    if (selection) {
+      if (selection.refused) return answer(false, `ollama skipped, ${selection.refused}`);
+      return answer(true, `ollama ${selection.host ?? "default server"}, selected`, { ollamaHost: selection.host ?? null });
     }
+    const gpu = ollama.readGpu?.();
+    if (!gpu) return answer(true, "ollama local");
     const idle = gpuIdle(gpu);
-    return { backend, available: true, tier: idle ? 0 : 2, room: 0, status: `ollama local, ${describeGpu(gpu)}${idle ? ", idle" : ""}` };
+    return answer(Boolean(forced) || idle, `ollama local, ${describeGpu(gpu)}, ${idle ? "idle" : "busy"}`);
   }
-  // OpenRouter has no plan windows. Free models share ollama's tier and win the tie by list order.
-  if (backend === "openrouter") {
-    return cfg.billing === "per-token"
-      ? { backend, available: true, tier: 4, room: 0, status: "openrouter per-token" }
-      : { backend, available: true, tier: 2, room: 0, status: "openrouter free" };
+  if (cfg.billing === "per-token" || cfg.billing === "free" || cfg.billing === "local") {
+    return answer(true, `${name} ${cfg.billing}`);
   }
-  // codexbar reads plan quotas, not API billing, and misreports API-billed backends; per-token never consults it.
-  if (cfg.billing === "per-token") {
-    return { backend, available: true, tier: 4, room: 0, status: `${backend} per-token` };
-  }
-  const entry = usage.find((e) => e.provider === CLOUD[backend]);
-  const windows = entry && !entry.error ? relevantWindows(backend, entry, cfg) : [];
-  if (!windows.length) {
-    // A failed usage read says nothing about the backend itself (codexbar can lose a provider's quota
-    // while its CLI works), so an unknown subscription ranks with near full, after ollama.
-    return { backend, available: true, tier: 3, room: 0, status: `${backend} usage unknown` };
-  }
-  const full = windows.find((w) => isFull(backend, w));
-  if (full) {
-    return { backend, available: false, status: `${backend} ${full.name} ${Math.round(full.used_percent)}% full until ${resetTime(full.resets_at)}` };
-  }
-  const top = windows.reduce((a, b) => (b.used_percent > a.used_percent ? b : a));
-  const near = windows.some((w) => w.used_percent >= NEAR);
-  const tier = near ? 3 : 1;
-  const label = near ? " near full" : "";
-  return { backend, available: true, tier, room: 100 - top.used_percent, status: `${backend} ${top.name} ${Math.round(top.used_percent)}%${label}` };
+  const top = fullest(windows);
+  return answer(true, top ? windowStatus(name, top) : `${name} usage unknown`);
 }
 
-export function route(usage, config, gpu, selection) {
-  const backends = config.backends ?? {};
-  const assessed = ["codex", "agy", "openrouter", "ollama"].map((backend) =>
-    backends[backend]?.enabled ? assess(backend, usage, backends[backend], gpu, selection) : { backend, available: false, disabled: true, status: `${backend} disabled` }
-  );
-  const pick = assessed
-    .filter((a) => a.available)
-    .sort((a, b) => a.tier - b.tier || b.room - a.room)[0];
-  if (!pick) {
-    return { backend: null, line: `no backend: ${assessed.map((a) => a.status).join(", ")}` };
+function assessSession(step, tier, usage, not) {
+  const answer = (available, status) => ({ step, tier, available, status });
+  if (not.includes(step)) return answer(false, `${step} excluded`);
+  if (step === "self") return answer(true, "self");
+  const windows = windowsFor(usage, "claude");
+  const blocked = windows.find((w) => (w.name === "week" || w.name === "5h") && full(w)) ??
+    windows.find((w) => w.name.toLowerCase() === `${tier} only` && w.used_percent > 80);
+  if (blocked) return answer(false, windowStatus("claude", blocked));
+  const week = windows.find((w) => w.name === "week");
+  return answer(true, week ? windowStatus("claude", week) : "claude usage unknown");
+}
+
+export function route({
+  role, tier, usage, config, inClaude, needsShell = false, not = [], forced = null,
+  running = {}, ollama = {}, resolve
+}) {
+  const requestedTier = role === "advisor" ? "fable" : tier;
+  const input = { usage, config, needsShell, not, forced, running, ollama, resolve };
+  const steps = forced ? [{ step: forced, tier: requestedTier }] :
+    funnel(role, requestedTier, usage, config.backends ?? {}, inClaude);
+  const visited = [];
+  const result = (pick, statuses, overLimit = false) => {
+    const backend = pick && BACKENDS.includes(pick.step) ? pick.step : null;
+    const label = backend ? `${backend} ${pick.model ?? "own model"}` : `${pick?.step} ${pick?.tier}`;
+    return {
+      step: pick?.step ?? null, backend, tier: pick?.tier ?? requestedTier,
+      model: backend ? pick.model ?? null : null, effort: backend ? pick.effort ?? null : null,
+      key: backend ? pick.key ?? null : null, ollamaHost: backend ? pick.ollamaHost ?? null : null,
+      overLimit, line: pick ? `→ ${label} (${statuses.join(", ")})` : `no backend: ${statuses.join(", ")}`
+    };
+  };
+  for (const { step, tier: stepTier } of steps) {
+    const assessed = BACKENDS.includes(step) ? assessBackend(step, stepTier, input) :
+      assessSession(step, stepTier, usage, not);
+    if (assessed.available) return result(assessed, [assessed.status, ...visited.map((s) => s.status)]);
+    visited.push(assessed);
   }
-  const others = assessed.filter((a) => a !== pick && !a.disabled).map((a) => a.status);
-  return { backend: pick.backend, line: `→ ${pick.backend} (${[pick.status, ...others].join(", ")})` };
+  const session = inClaude ? "claude" : "self";
+  if (!forced && role !== "advisor" && !not.includes(session)) {
+    const pick = visited.find((s) => s.step === session);
+    return result(pick, [pick.status, ...visited.filter((s) => s !== pick).map((s) => s.status)], true);
+  }
+  return result(null, visited.map((s) => s.status));
 }
 
 const HANDOFF = {
@@ -99,16 +159,33 @@ const HANDOFF = {
   independent: "hand off any part a worker can do alone",
   all: "hand off everything but orchestration and diff review"
 };
+const LEVELS = ["named", "independent", "all"];
 
-// ollamaIdle: ollama is enabled and the GPU is idle. Free local compute raises "named" to "independent".
-export function handoffLevel(usage, { ollamaIdle = false } = {}) {
-  const week = usage.find((e) => e.provider === "claude")?.windows?.find((w) => w.name === "week");
-  const used = typeof week?.used_percent === "number" ? week.used_percent : null;
+export function handoffLevel(usage, { ollamaIdle = false, config, now = new Date() } = {}) {
+  const week = windowsFor(usage, "claude").find((w) => w.name === "week");
+  const used = week?.used_percent ?? null;
   let level = used === null ? "named" : used >= 90 ? "all" : used >= 70 ? "independent" : "named";
-  const source = used === null ? "claude no usage data" : `claude week ${Math.round(used)}%`;
+  let source = used === null ? "claude no usage data" : windowStatus("claude", week);
   if (ollamaIdle && level === "named") {
     level = "independent";
-    return { level, line: `${source}, GPU idle → ${HANDOFF[level]}` };
+    source += ", GPU idle";
   }
-  return { level, line: `${source} → ${HANDOFF[level]}` };
+  let raisedBy = null;
+  for (const name of BACKENDS) {
+    const cfg = config?.backends?.[name];
+    if (!cfg?.enabled || cfg.billing !== "subscription") continue;
+    const windows = countedWindows(usage, name, cfg);
+    if (windows.some(full)) continue;
+    for (const w of windows) {
+      if (w.name !== "week" && w.window_minutes !== 10080) continue;
+      if (w.used_percent > 80) continue;
+      const untilReset = new Date(w.resets_at ?? "").getTime() - now.getTime();
+      const candidate = w.used_percent < 70 && untilReset >= 0 && untilReset <= 2 * 86400_000 ? "all" : "independent";
+      if (LEVELS.indexOf(candidate) > LEVELS.indexOf(level)) {
+        level = candidate;
+        raisedBy = windowStatus(name, w);
+      }
+    }
+  }
+  return { level, line: `${source}${raisedBy ? `, ${raisedBy}` : ""} → ${HANDOFF[level]}` };
 }
