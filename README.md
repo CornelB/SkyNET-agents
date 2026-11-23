@@ -41,18 +41,19 @@ Configuration and routing rules: [docs/reference/configuration.md](docs/referenc
 
 ## Tiers
 
-A job asks for a tier (`delegate --tier`), named after the Claude families. Each backend serves a tier with the model its configuration maps to that tier (`setup --map`); a backend without a map serves every tier on its CLI's own model. A suggested map, by family (skynet runs the newest version of a family):
+A job asks for a tier (`delegate --tier`), named after the Claude families. Each backend serves a tier with a model family, and skynet runs the newest version of that family the backend lists. The map below is built in, so a new install needs no setup for it; `setup --map` replaces a tier for one backend.
 
 |                  | Haiku | Sonnet | Opus | Fable |
 |------------------|-------|--------|------|-------|
 | Claude           | Haiku | Sonnet | Opus | Fable |
 | OpenAI (`codex`) | Luna  | Terra  | Sol  | Astra |
 | Google (`agy`)   | Flash | Hydrogen | Neon | Neon, then Carbon |
+| OpenRouter       | -     | -      | -    | -     |
 | Ollama           | -     | -      | -    | -     |
 
-Ollama's model varies per setup: it serves the tier `OLLAMA_CODING_MODEL_TIER` declares, and every tier below it.
+Ollama and OpenRouter models vary per setup. Ollama serves the tier `OLLAMA_CODING_MODEL_TIER` declares, and every tier below it. OpenRouter joins a funnel only with a saved map.
 
-The map is the user's configuration, not a fact of the plugin: a backend serves a job when it has a model of the job's tier or a higher one.
+A backend serves a job when it has a model of the job's tier or a higher one.
 
 ## Funnels
 

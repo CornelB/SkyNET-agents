@@ -29,8 +29,8 @@ The caller states a role and a tier. skynet answers with the first step of that 
 
 ## Tier map
 
-1. `backends.<name>.tiers` in `~/.config/skynet/config.json`: for each tier, an ordered list of entries. An entry is `<family>` or `<family>@<effort>`. `/skynet:setup` writes the map from flags and ships no default.
-2. A backend with no `tiers` key serves every tier on its CLI's own model, as today, with `model unmapped` in its status. A backend with a `tiers` key serves a job when the map has an entry for the job's tier or for a higher tier; the lowest such tier is used. Otherwise its status is `<backend> no <tier> model`.
+1. codex and agy ship a built-in map of families, one list per tier (`DEFAULT_TIERS` in `scripts/lib/tiers.mjs`): codex `luna`, `terra`, `sol`, `astra@high`; agy `flash@medium`, `hydrogen@high`, `neon@xhigh`, then `neon@xhigh` and `carbon@high`. A new install needs no map. `backends.<name>.tiers` in `~/.config/skynet/config.json` replaces single tiers of it: for each tier, an ordered list of entries. An entry is `<family>` or `<family>@<effort>`. `/skynet:setup` writes it from flags.
+2. A backend serves a job when its map has an entry for the job's tier or for a higher tier; the lowest such tier is used. A built-in family the backend does not list runs the CLI's own model, with `model unmapped` in its status. A saved family the backend does not list: `<backend> no <tier> model`. A backend with no built-in map and no `tiers` key serves every tier on its CLI's own model.
 3. Ollama has no map. Its tier is `OLLAMA_CODING_MODEL_TIER` in the environment. Unset or not a tier name: `ollama skipped, no tier declared`. It serves jobs of that tier and of every tier below it; above it: `ollama no <tier> model`.
 4. OpenRouter joins a funnel only with a `tiers` key. Its entries are exact model ids, run as written: no version resolution, no effort. The rate-limit retry on `models.fallback` stays. Without `tiers` it runs only by `--backend openrouter`, on `models.coding` or `models.reasoning` as today.
 
@@ -130,7 +130,7 @@ The level applies first: it says which pieces leave the session. The funnel then
   - step 8: a job that failed is sent again at the same tier with `--not <step>`. A result that fails its check is sent again one tier up; at `fable` the session does the piece itself.
 - `delegate.md`: step 1 runs `route` for the hand-off level; the tier rule and the new flags; exit 4 as above.
 - `agents/delegate.md`: a brief that names no tier is refused in one line; on exit 4 it returns the pick line and stops.
-- `setup.md`: asks for the tier map of each enabled backend and passes `--map`.
+- `setup.md`: shows the map in effect and does not ask about it; it passes `--map` only when the user asks to change a tier.
 - `skills/usage/SKILL.md`: the thresholds above.
 - `skills/skynet/SKILL.md`: external workers follow the funnels.
 

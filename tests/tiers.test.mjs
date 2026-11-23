@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { TIERS, tierIndex, parseEntry, entriesFor, compareVersions, resolveSlug, readCodexSlugs, readAgySlugs, ollamaTier, resolveTier } from "../scripts/lib/tiers.mjs";
+import { DEFAULT_TIERS, tierMap, TIERS, tierIndex, parseEntry, entriesFor, compareVersions, resolveSlug, readCodexSlugs, readAgySlugs, ollamaTier, resolveTier } from "../scripts/lib/tiers.mjs";
 
 const noList = () => assert.fail("model list should not be read");
 function tmp(t) {
@@ -158,7 +158,7 @@ test("ollama tier is normalized and invalid or unset declarations are null", () 
 
 test("an unmapped backend serves every tier without reading a model list", () => {
   for (const tier of TIERS) {
-    assert.deepEqual(resolveTier("codex", { model: "own" }, tier, { listSlugs: noList }), {
+    assert.deepEqual(resolveTier("other", { model: "own" }, tier, { listSlugs: noList }), {
       serves: true, model: null, effort: null, note: "model unmapped"
     });
   }
@@ -166,7 +166,7 @@ test("an unmapped backend serves every tier without reading a model list", () =>
 
 test("an empty or lower-only map cannot serve the job and reads no list", () => {
   for (const tiers of [{}, { haiku: ["small"] }, { opus: [] }]) {
-    assert.deepEqual(resolveTier("codex", { tiers }, "opus", { listSlugs: noList }), { serves: false });
+    assert.deepEqual(resolveTier("other", { tiers }, "opus", { listSlugs: noList }), { serves: false });
   }
 });
 
@@ -182,17 +182,17 @@ test("openrouter uses the first exact id with its original spelling and no effor
 test("readable lists resolve the first matching entry before later newer families", () => {
   const cfg = Object.freeze({ tiers: Object.freeze({ sonnet: Object.freeze(["missing@high", "Big@high", "small@low"]) }) });
   const listSlugs = (backend) => {
-    assert.equal(backend, "codex");
+    assert.equal(backend, "other");
     return ["acme-2.1-big", "acme-3-big", "acme-99-small"];
   };
-  assert.deepEqual(resolveTier("codex", cfg, "sonnet", { listSlugs }), {
-    serves: true, tier: "sonnet", model: "acme-3-big", effort: "high", key: "codex:big@high"
+  assert.deepEqual(resolveTier("other", cfg, "sonnet", { listSlugs }), {
+    serves: true, tier: "sonnet", model: "acme-3-big", effort: "high", key: "other:big@high"
   });
 });
 
 test("resolved results name the served higher tier and preserve absent effort", () => {
-  assert.deepEqual(resolveTier("codex", { tiers: { opus: ["Big"] } }, "sonnet", { listSlugs: () => ["acme-3-big"] }), {
-    serves: true, tier: "opus", model: "acme-3-big", effort: null, key: "codex:big@"
+  assert.deepEqual(resolveTier("other", { tiers: { opus: ["Big"] } }, "sonnet", { listSlugs: () => ["acme-3-big"] }), {
+    serves: true, tier: "opus", model: "acme-3-big", effort: null, key: "other:big@"
   });
 });
 
@@ -207,24 +207,56 @@ test("agy tier resolution requires matching effort and can try a later entry", (
 
 test("a readable list with no matching entry refuses even with a saved slug", () => {
   for (const slugs of [[], ["acme-latest-big"], ["acme-3-small"]]) {
-    assert.deepEqual(resolveTier("codex", { tiers: { opus: ["big@high"] } }, "opus", {
-      listSlugs: () => slugs, saved: { "codex:big@high": "acme-2-big" }
+    assert.deepEqual(resolveTier("other", { tiers: { opus: ["big@high"] } }, "opus", {
+      listSlugs: () => slugs, saved: { "other:big@high": "acme-2-big" }
     }), { serves: false });
   }
 });
 
 test("an unreadable list uses the first entry's saved slug and served tier", () => {
-  const saved = Object.freeze({ "codex:big@high": "acme-2-big", "codex:small@low": "acme-3-small" });
-  assert.deepEqual(resolveTier("codex", { tiers: { opus: ["Big@high", "small@low"] } }, "sonnet", {
+  const saved = Object.freeze({ "other:big@high": "acme-2-big", "other:small@low": "acme-3-small" });
+  assert.deepEqual(resolveTier("other", { tiers: { opus: ["Big@high", "small@low"] } }, "sonnet", {
     listSlugs: () => null, saved
-  }), { serves: true, tier: "opus", model: "acme-2-big", effort: "high", key: "codex:big@high", note: "model list unreadable" });
+  }), { serves: true, tier: "opus", model: "acme-2-big", effort: "high", key: "other:big@high", note: "model list unreadable" });
 });
 
 test("an unreadable list without a saved slug falls back to the CLI's own model", () => {
-  assert.deepEqual(resolveTier("codex", { tiers: { opus: ["big", "small@low"] } }, "opus", {
-    listSlugs: () => null, saved: { "codex:small@low": "acme-3-small" }
-  }), { serves: true, tier: "opus", model: null, effort: null, key: "codex:big@", note: "model list unreadable" });
+  assert.deepEqual(resolveTier("other", { tiers: { opus: ["big", "small@low"] } }, "opus", {
+    listSlugs: () => null, saved: { "other:small@low": "acme-3-small" }
+  }), { serves: true, tier: "opus", model: null, effort: null, key: "other:big@", note: "model list unreadable" });
   assert.deepEqual(resolveTier("agy", { tiers: { opus: ["big@high"] } }, "opus", { listSlugs: () => null }), {
     serves: true, tier: "opus", model: null, effort: "high", key: "agy:big@high", note: "model list unreadable"
   });
+});
+
+test("codex and agy ship a map of families for every tier, with no version in it", () => {
+  for (const backend of ["codex", "agy"]) {
+    for (const tier of TIERS) {
+      const entries = DEFAULT_TIERS[backend][tier];
+      assert.ok(entries.length > 0, `${backend} ${tier}`);
+      for (const entry of entries) assert.doesNotMatch(entry, /\d/);
+    }
+  }
+  // An agy slug ends in its effort, so every built-in agy entry names one.
+  for (const tier of TIERS) for (const entry of DEFAULT_TIERS.agy[tier]) assert.match(entry, /@/);
+});
+
+test("a saved tier replaces the built-in one and leaves the other tiers built in", () => {
+  assert.deepEqual(tierMap("codex", { tiers: { opus: ["big"] } }), { ...DEFAULT_TIERS.codex, opus: ["big"] });
+  assert.deepEqual(tierMap("codex", {}), { ...DEFAULT_TIERS.codex });
+  assert.equal(tierMap("other", {}), null);
+});
+
+test("with no saved map the built-in family resolves to its newest listed version", () => {
+  const slugs = ["acme-2-terra", "acme-2.1-terra", "acme-2-sol"];
+  assert.deepEqual(resolveTier("codex", {}, "sonnet", { listSlugs: () => slugs }), {
+    serves: true, tier: "sonnet", model: "acme-2.1-terra", effort: null, key: "codex:terra@"
+  });
+});
+
+test("a built-in family the backend does not list runs the CLI's own model; a saved one refuses", () => {
+  assert.deepEqual(resolveTier("codex", {}, "haiku", { listSlugs: () => ["acme-2-terra"] }), {
+    serves: true, model: null, effort: null, note: "model unmapped"
+  });
+  assert.deepEqual(resolveTier("codex", { tiers: { haiku: ["gone"] } }, "haiku", { listSlugs: () => ["acme-2-terra"] }), { serves: false });
 });

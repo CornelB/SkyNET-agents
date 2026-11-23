@@ -15,7 +15,7 @@ import { gpuIdle, readGpu } from "./lib/gpu.mjs";
 import { handoffLevel, route } from "./lib/router.mjs";
 import { selectOllamaServer } from "./lib/selector.mjs";
 import { ensureStateDir, generateJobId, resolveJobLogFile, resolveJobsDir, resolveStateDir, upsertJob, writeJobFile } from "./lib/state.mjs";
-import { TIERS, ollamaTier, parseEntry, readAgySlugs, readCodexSlugs, resolveTier, tierIndex } from "./lib/tiers.mjs";
+import { TIERS, ollamaTier, parseEntry, readAgySlugs, readCodexSlugs, resolveTier, tierIndex, tierMap } from "./lib/tiers.mjs";
 import { appendLogLine, createJobRecord, nowIso, runTrackedJob } from "./lib/tracked-jobs.mjs";
 import { readUsage } from "./lib/usage.mjs";
 import { resolveWorkspaceRoot } from "./lib/workspace.mjs";
@@ -134,11 +134,12 @@ function setup(options) {
     const roles = (models) => (models ? ` ${Object.entries(models).map(([role, id]) => `${role}=${id}`).join(" ")}` : "");
     // Each mapped tier with what it runs today: `sonnet=<entries> → <slug>`.
     const tiers = (name) => {
-      const map = cfg[name]?.tiers;
+      const map = tierMap(name, cfg[name]);
       if (!map) return "";
       const shown = TIERS.filter((tier) => map[tier]?.length).map((tier) => {
         const resolved = resolve(name, tier);
-        return `${tier}=${map[tier].join(",")} → ${resolved.serves ? resolved.model ?? "own model" : "no model"}`;
+        const origin = cfg[name]?.tiers?.[tier] ? "" : " (built in)";
+        return `${tier}=${map[tier].join(",")}${origin} → ${resolved.serves ? resolved.model ?? "own model" : "no model"}`;
       });
       return shown.length ? ` tiers: ${shown.join("; ")}` : "";
     };

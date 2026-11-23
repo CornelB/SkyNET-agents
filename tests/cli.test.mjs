@@ -178,16 +178,34 @@ test("delegate without --tier is rejected", () => {
 test("a mapped tier runs the newest listed version with its effort and records both", () => {
   const { env, run } = setup();
   writeConfig(env, { codex: { enabled: true, billing: "subscription", tiers: { sonnet: ["big@high"] } } });
-  const r = run("delegate", "--tier", "haiku", "--mode", "read", "--wait", "--", "x");
+  const r = run("delegate", "--tier", "sonnet", "--mode", "read", "--wait", "--", "x");
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /^\S+ → codex acme-2\.1-big \(codex 5h 38%\)/);
   const job = JSON.parse(run("status", r.out.split(" ")[0], "--json").out);
-  assert.deepEqual([job.tier, job.model, job.effort], ["haiku", "acme-2.1-big", "high"]);
+  assert.deepEqual([job.tier, job.model, job.effort], ["sonnet", "acme-2.1-big", "high"]);
+});
+
+test("a backend with no saved map runs the built-in family of the tier, newest version", () => {
+  const { env, runWith } = setup();
+  writeConfig(env, { codex: { enabled: true, billing: "subscription" } });
+  const home = tmp("skynet-codex-families-");
+  fs.writeFileSync(path.join(home, "models_cache.json"), JSON.stringify({ models: [
+    { slug: "acme-2-terra" }, { slug: "acme-2.1-terra" }, { slug: "acme-3-astra" }
+  ] }));
+  const sonnet = runWith({ CODEX_HOME: home }, "delegate", "--tier", "sonnet", "--mode", "read", "--wait", "--", "x");
+  assert.equal(sonnet.code, 0, sonnet.err);
+  assert.match(sonnet.out, /^\S+ → codex acme-2\.1-terra \(codex 5h 38%\)/);
+  const fable = runWith({ CODEX_HOME: home }, "delegate", "--tier", "fable", "--mode", "read", "--wait", "--", "x");
+  const job = JSON.parse(runWith({ CODEX_HOME: home }, "status", fable.out.split(" ")[0], "--json").out);
+  assert.deepEqual([job.model, job.effort], ["acme-3-astra", "high"]);
+  // A built-in family the backend does not list leaves the backend on its CLI's own model.
+  const opus = runWith({ CODEX_HOME: home }, "delegate", "--tier", "opus", "--mode", "read", "--wait", "--", "x");
+  assert.match(opus.out, /^\S+ → codex own model \(codex 5h 38%, model unmapped\)/);
 });
 
 test("--backend keeps the tier map: a tier the backend does not serve is refused", () => {
   const { env, run } = setup();
-  writeConfig(env, { codex: { enabled: true, billing: "subscription", tiers: { sonnet: ["big"] } } });
+  writeConfig(env, { codex: { enabled: true, billing: "subscription", tiers: { fable: ["missing"] } } });
   const r = run("delegate", "--tier", "fable", "--backend", "codex", "--mode", "read", "--", "x");
   assert.equal(r.code, 1);
   assert.equal(r.err, "codex no fable model");
@@ -225,7 +243,7 @@ test("setup merges: a map and a limit survive a later --enable, and --map repeat
   assert.deepEqual(readConfig(env).backends.codex.tiers, { sonnet: ["big@high", "small"], fable: ["huge"] });
   assert.equal(run("setup", "--map", "codex:fable=").code, 0);
   assert.deepEqual(readConfig(env).backends.codex.tiers, { sonnet: ["big@high", "small"] });
-  assert.match(run("setup").out, /^codex .*tiers: sonnet=big@high,small → acme-2\.1-big maxParallel=3$/m);
+  assert.match(run("setup").out, /^codex .*tiers: haiku=luna \(built in\) → own model; sonnet=big@high,small → acme-2\.1-big; .*fable=astra@high \(built in\) → own model maxParallel=3$/m);
   const bare = run("setup", "--map", "agy:sonnet=big");
   assert.equal(bare.code, 2);
   assert.match(bare.err, /agy entry big needs an effort/);

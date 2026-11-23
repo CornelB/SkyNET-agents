@@ -27,7 +27,7 @@ skynet reads one machine-local file: `$XDG_CONFIG_HOME/skynet/config.json`, defa
 | `backends.openrouter.models.decision` | an openrouter.ai model id | `nvidia/nemotron-3.5-lightning:free` | Small, fast classifier model. Saved only; no job uses it yet. |
 | `backends.openrouter.models.fallback` | an openrouter.ai model id | `openrouter/free` | A job that fails with a rate limit (`429`, "rate limit") retries once on this model. The free router picks a random free model per request. |
 | `backends.agy.window` | a codexbar window name | none: every agy window | The Antigravity usage window that counts for routing. |
-| `backends.<name>.tiers` | per tier (`haiku`, `sonnet`, `opus`, `fable`), an ordered list of `<family>` or `<family>@<effort>` | none | Which model serves which tier; see [Tiers](#tiers). `setup --map` writes it. |
+| `backends.<name>.tiers` | per tier (`haiku`, `sonnet`, `opus`, `fable`), an ordered list of `<family>` or `<family>@<effort>` | built in for codex and agy | Which model serves which tier; see [Tiers](#tiers). `setup --map` writes it. |
 | `backends.<name>.maxParallel` | a positive integer | `1` for `local` billing, else `2` | Jobs of this backend that may run at once, counted in every workspace. A backend at its limit is skipped; there is no queue. `setup --max-parallel` writes it. |
 
 | `timeoutMinutes` | minutes | `60` | A job still running after this is killed and recorded as failed (`timed out`). `delegate --timeout-s` overrides it per job. |
@@ -61,8 +61,16 @@ OpenRouter jobs run `opencode run --standalone --auto`, with `--agent build` for
 
 A job asks for a tier: `haiku`, `sonnet`, `opus` or `fable`, in rising order. `delegate --tier` is required.
 
-- A backend with no `tiers` key serves every tier on its CLI's own model (`model unmapped` in its status).
-- A backend with a `tiers` key serves a job when the map has an entry for the job's tier or for a higher one; the lowest such tier is used.
+- codex and agy have a built-in map, by family:
+
+  | Backend | haiku | sonnet | opus | fable |
+  |---------|-------|--------|------|-------|
+  | codex | `luna` | `terra` | `sol` | `astra@high` |
+  | agy | `flash@medium` | `hydrogen@high` | `neon@xhigh` | `neon@xhigh`, `carbon@high` |
+
+- A tier in `backends.<name>.tiers` replaces that tier of the built-in map; the other tiers stay built in. `setup --map <backend>:<tier>=` with no entry removes the saved tier.
+- A backend serves a job when its map has an entry for the job's tier or for a higher one; the lowest such tier is used.
+- When the backend lists no model of a built-in family, its CLI's own model runs (`model unmapped` in its status). When it lists no model of a saved family, the backend does not serve the tier (`<backend> no <tier> model`).
 - Ollama serves the tier `OLLAMA_CODING_MODEL_TIER` declares and every tier below it.
 - OpenRouter is in a funnel only with a `tiers` key; its entries are exact model ids. Without one it runs only by `--backend openrouter`, on `models.coding` or `models.reasoning`.
 

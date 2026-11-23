@@ -5,6 +5,19 @@ import path from "node:path";
 
 export const TIERS = Object.freeze(["haiku", "sonnet", "opus", "fable"]);
 
+// The map a backend runs on with no configuration: families only, never a version.
+// A tier in `backends.<name>.tiers` replaces that tier here.
+export const DEFAULT_TIERS = Object.freeze({
+  codex: Object.freeze({ haiku: ["luna"], sonnet: ["terra"], opus: ["sol"], fable: ["astra@high"] }),
+  agy: Object.freeze({ haiku: ["flash@medium"], sonnet: ["hydrogen@high"], opus: ["neon@xhigh"], fable: ["neon@xhigh", "carbon@high"] })
+});
+
+export function tierMap(backend, cfg) {
+  const defaults = DEFAULT_TIERS[backend];
+  if (!defaults) return Object.hasOwn(cfg ?? {}, "tiers") ? cfg.tiers : null;
+  return { ...defaults, ...cfg?.tiers };
+}
+
 export function tierIndex(name) {
   return typeof name === "string" ? TIERS.indexOf(name.trim().toLowerCase()) : -1;
 }
@@ -84,10 +97,10 @@ export function ollamaTier(env = process.env) {
 }
 
 export function resolveTier(backend, cfg, tier, { listSlugs, saved = {} }) {
-  if (!Object.hasOwn(cfg, "tiers")) {
-    return { serves: true, model: null, effort: null, note: "model unmapped" };
-  }
-  const served = entriesFor(cfg.tiers, tier);
+  const unmapped = { serves: true, model: null, effort: null, note: "model unmapped" };
+  const map = tierMap(backend, cfg);
+  if (!map) return unmapped;
+  const served = entriesFor(map, tier);
   if (!served) return { serves: false };
   if (backend === "openrouter") {
     return { serves: true, tier: served.tier, model: served.entries[0].originalFamily, effort: null };
@@ -103,5 +116,6 @@ export function resolveTier(backend, cfg, tier, { listSlugs, saved = {} }) {
       return { serves: true, tier: served.tier, model, effort: entry.effort, key };
     }
   }
-  return { serves: false };
+  // A built-in family the backend no longer lists must not switch the backend off: its CLI's own model runs.
+  return Object.hasOwn(cfg?.tiers ?? {}, served.tier) ? { serves: false } : unmapped;
 }
